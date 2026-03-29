@@ -1,0 +1,7 @@
+name = "66id-loan-bot"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "BOT_KV"
+id = "c45454ec448640abbbb5c8eac5c9db35"
