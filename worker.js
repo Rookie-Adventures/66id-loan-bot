@@ -328,8 +328,8 @@ async function forwardApply(chatId, data, userId) {
     `📲 型号：${data.model  || "-"}\n` +
     `📍 地区：${data.region || "-"}\n` +
     `🕐 时间：${data.time}\n\n` +
-    `✅ 批准指令：<code>/ok ${userId} 金额 单位 利率 天数</code>\n` +
-    `例：<code>/ok ${userId} 500 RMB 0.1 7</code>`;
+    `✅ 批准指令：<code>/ok ${userId} 本金 利息 天数</code>\n` +
+    `例：<code>/ok ${userId} 300 50 7</code>`;
   for (const target of CONFIG.FORWARD_TARGETS) {
     await sendMsg(target, caption);
     for (const key of ["shot1", "shot2", "shot3", "shot4"]) {
@@ -596,32 +596,39 @@ async function cmdCid(chatId, text, env) {
 
 async function cmdApprove(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
-  if (parts.length < 3) {
+  // 格式：/ok 用户ID 本金 利息 天数
+  if (parts.length < 5) {
     return sendMsg(chatId,
-      "❌ 格式：/ok 用户ID 金额 [单位] [日利率] [天数]\n\n" +
+      "❌ 格式：/ok 用户ID 本金 利息 天数\n\n" +
       "参数说明：\n" +
-      "• 单位：RMB 或 USDT（默认 RMB）\n" +
-      "• 日利率：小数，如 0.1 表示10%（默认 0.1）\n" +
-      "• 天数：贷款周期天数（默认 7）\n\n" +
+      "• 本金：借款金额（数字）\n" +
+      "• 利息：手动输入利息金额（不按比例，老用户可优惠）\n" +
+      "• 天数：贷款周期天数\n\n" +
       "示例：\n" +
-      "<code>/ok 123456789 500</code>  → 500元 10% 7天\n" +
-      "<code>/ok 123456789 50 USDT</code>  → 50U 10% 7天\n" +
-      "<code>/ok 123456789 500 RMB 0.05 14</code>  → 500元 5% 14天"
+      "<code>/ok 123456789 300 50 7</code>  → 本金300 利息50 7天 应还350\n" +
+      "<code>/ok 123456789 300 130 5</code>  → 本金300 利息130 5天 应还430"
     );
   }
 
   const targetId = parts[1];
   const amount   = parseFloat(parts[2]);
-  const unit     = (parts[3] || "RMB").toUpperCase();
-  const rate     = parseFloat(parts[4]) || (CONFIG.DAILY_RATE || 0.1);
-  const loanDays = parseInt(parts[5])   || (CONFIG.LOAN_DAYS  || 7);
+  const interest = parseFloat(parts[3]);
+  const loanDays = parseInt(parts[4]);
 
   if (isNaN(amount) || amount <= 0) {
-    return sendMsg(chatId, "❌ 金额格式错误，请输入正数\n例：/ok 123456789 500");
+    return sendMsg(chatId, "❌ 本金格式错误，请输入正数\n例：/ok 123456789 300 50 7");
+  }
+  if (isNaN(interest) || interest < 0) {
+    return sendMsg(chatId, "❌ 利息格式错误，请输入非负数\n例：/ok 123456789 300 50 7");
+  }
+  if (isNaN(loanDays) || loanDays <= 0) {
+    return sendMsg(chatId, "❌ 天数格式错误，请输入正整数\n例：/ok 123456789 300 50 7");
   }
 
-  const unitLabel = unit === "USDT" ? "U" : "¥";
-  const repayAmt  = (amount * (1 + rate * loanDays)).toFixed(unit === "USDT" ? 2 : 0);
+  // 应还 = 本金 + 利息（管理员直接指定，不按比例）
+  const repayAmt  = (amount + interest).toFixed(0);
+  const unitLabel = "¥";
+  const unit      = "RMB";
   const today     = getToday();
   const endDate   = addDays(today, loanDays);
 
@@ -631,7 +638,7 @@ async function cmdApprove(chatId, text, env) {
     userId:       targetId,
     amount,
     unit,
-    rate,
+    interest,
     repay_amount: repayAmt,
     start_date:   today,
     end_date:     endDate,
@@ -652,8 +659,8 @@ async function cmdApprove(chatId, text, env) {
 
   await sendMsg(targetId,
     `🎉 恭喜！您的申请已通过审核！\n\n` +
-    `💰 批准金额：<b>${unitLabel}${amount}</b>\n` +
-    `📊 日利率：<b>${(rate * 100).toFixed(1)}%</b>\n` +
+    `💰 借款金额：<b>${unitLabel}${amount}</b>\n` +
+    `💵 利息：<b>${unitLabel}${interest}</b>\n` +
     `📅 贷款天数：<b>${loanDays} 天</b>\n` +
     `📅 还款截止：<b>${endDate}</b>\n` +
     `💳 到期应还：<b>${unitLabel}${repayAmt}</b>\n\n` +
@@ -664,8 +671,8 @@ async function cmdApprove(chatId, text, env) {
   return sendMsg(chatId,
     `✅ 批准成功\n\n` +
     `用户：${targetId}\n` +
-    `借款：${unitLabel}${amount} (${unit})\n` +
-    `日利率：${(rate * 100).toFixed(1)}%\n` +
+    `借款：${unitLabel}${amount}\n` +
+    `利息：${unitLabel}${interest}\n` +
     `天数：${loanDays} 天\n` +
     `应还：${unitLabel}${repayAmt}\n` +
     `到期：${endDate}`
@@ -814,7 +821,7 @@ async function cmdGetUser(chatId, text, env) {
   if (loan) {
     const unit      = loan.unit || "RMB";
     const unitLabel = unit === "USDT" ? "U" : "¥";
-    const rate      = loan.rate || CONFIG.DAILY_RATE || 0.1;
+    const rate      = CONFIG.DAILY_RATE || 0.1;
     const diff      = diffDays(loan.end_date);
     const overdueFee = diff > 0
       ? (parseFloat(loan.repay_amount) * rate * diff).toFixed(unit === "USDT" ? 2 : 0)
@@ -826,8 +833,8 @@ async function cmdGetUser(chatId, text, env) {
     info += `\n💰 贷款信息\n`;
     info += `状态：${statusMap[loan.status] || loan.status}\n`;
     info += `借款：${unitLabel}${loan.amount} (${unit})\n`;
-    info += `日利率：${(rate * 100).toFixed(1)}%\n`;
-    info += `贷款天数：${loan.loan_days || 7} 天\n`;
+    info += `利息：${unitLabel}${loan.interest || "-"}\n`;
+    info += `贷款天数：${loan.loan_days || "-"} 天\n`;
     info += `应还：${unitLabel}${loan.repay_amount}\n`;
     info += `开始：${loan.start_date}\n`;
     info += `到期：${loan.end_date}\n`;
@@ -872,7 +879,7 @@ async function cmdLoanList(chatId, env) {
 
     const unit      = loan.unit || "RMB";
     const unitLabel = unit === "USDT" ? "U" : "¥";
-    const rate      = loan.rate || CONFIG.DAILY_RATE || 0.1;
+    const rate      = CONFIG.DAILY_RATE || 0.1;
     const name      = apply?.model || "未知";
     const diff      = diffDays(loan.end_date);
     const renewCount = loan.renewCount || 0;
@@ -884,7 +891,7 @@ async function cmdLoanList(chatId, env) {
     const pauseTag = paused ? ` ⏸暂停至${loan.pause_until}` : "";
     const base =
       `👤 <code>${uid}</code>  ${name}${pauseTag}\n` +
-      `💰 借：${unitLabel}${loan.amount}  应还：${unitLabel}${loan.repay_amount}  利率：${(rate*100).toFixed(1)}%  续期：${renewCount}次\n` +
+      `💰 借：${unitLabel}${loan.amount}  应还：${unitLabel}${loan.repay_amount}  天数：${loan.loan_days||"-"}天  续期：${renewCount}次\n` +
       `📅 到期：${loan.end_date}\n`;
 
     if (loan.status === "repaid") {
@@ -949,7 +956,7 @@ async function cmdExport(chatId, env) {
   const users = raw ? JSON.parse(raw) : [];
   if (users.length === 0) return sendMsg(chatId, "📋 暂无下款记录，无法导出");
 
-  const header = ["用户ID","型号","地区","单位","借款金额","应还金额","日利率%","天数","开始日期","到期日期","状态","逾期天数","续期次数","累计已收利息","还款时间","申请时间"];
+  const header = ["用户ID","型号","地区","单位","借款金额","利息","应还金额","天数","开始日期","到期日期","状态","逾期天数","续期次数","累计已收利息","还款时间","申请时间"];
   const rows   = [header.map(escCsv).join(",")];
 
   for (const uid of users) {
@@ -959,7 +966,6 @@ async function cmdExport(chatId, env) {
 
     const diff        = diffDays(loan.end_date);
     const overdueDays = loan.status !== "repaid" && diff > 0 ? diff : 0;
-    const rate        = loan.rate || CONFIG.DAILY_RATE || 0.1;
 
     const row = [
       uid,
@@ -967,9 +973,9 @@ async function cmdExport(chatId, env) {
       apply?.region || "",
       loan.unit     || "RMB",
       loan.amount   || "",
+      loan.interest || "",
       loan.repay_amount || "",
-      ((rate * 100).toFixed(1)),
-      loan.loan_days || 7,
+      loan.loan_days || "",
       loan.start_date || "",
       loan.end_date   || "",
       loan.status     || "",
@@ -1004,7 +1010,7 @@ async function cmdStats(chatId, env) {
     if (!loan || loan.status === "repaid") continue;
     const diff = diffDays(loan.end_date);
     if (diff > 0) {
-      const rate  = loan.rate || CONFIG.DAILY_RATE || 0.1;
+      const rate  = CONFIG.DAILY_RATE || 0.1;
       const fee   = parseFloat(loan.repay_amount) * rate * diff;
       const total = parseFloat(loan.repay_amount) + fee;
       if ((loan.unit || "RMB") === "RMB") overdueRMB  += total;
@@ -1104,16 +1110,15 @@ async function cmdLiuliu(chatId) {
     `👮 管理员指令手册\n${"═".repeat(20)}\n\n` +
 
     `📋 <b>贷款审批</b>\n` +
-    `┌ /ok 用户ID 金额 [单位] [日利率] [天数]\n` +
-    `│ 单位：RMB 或 USDT（默认 RMB）\n` +
-    `│ 日利率：小数，如 0.1=10%（默认 0.1）\n` +
-    `│ 天数：贷款周期（默认 7）\n` +
-    `│ 例1：/ok 123456789 500\n` +
-    `│      → 500元 10% 7天 应还550\n` +
-    `│ 例2：/ok 123456789 50 USDT\n` +
-    `│      → 50U 10% 7天 应还55U\n` +
-    `│ 例3：/ok 123456789 500 RMB 0.05 14\n` +
-    `│      → 500元 5% 14天 应还850\n\n` +
+    `┌ /ok 用户ID 本金 利息 天数\n` +
+    `│ 本金：借款金额\n` +
+    `│ 利息：手动输入（老用户可优惠）\n` +
+    `│ 天数：贷款周期，输几天就是几天\n` +
+    `│ 应还 = 本金 + 利息\n` +
+    `│ 例1：/ok 123456789 300 50 7\n` +
+    `│      → 借300 利息50 7天 应还350\n` +
+    `│ 例2：/ok 123456789 300 130 5\n` +
+    `│      → 借300 利息130 5天 应还430\n\n` +
 
     `├ /xq 用户ID 天数 利息 新应还金额\n` +
     `│ 续期，手动指定本次收到的利息和新周期应还\n` +
@@ -1185,7 +1190,7 @@ async function scheduledTask(env) {
 
       const unit      = loan.unit || "RMB";
       const unitLabel = unit === "USDT" ? "U" : "¥";
-      const rate      = loan.rate || CONFIG.DAILY_RATE || 0.1;
+      const rate      = CONFIG.DAILY_RATE || 0.1;
       const diff      = diffDays(loan.end_date);
 
       if (diff === -1 && !loan.reminded) {
