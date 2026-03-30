@@ -4,10 +4,10 @@
 
 
 const DEFAULT = {
-  BOT_TOKEN:        "8604621639:AAEMH_W5NDU1Z2pVIvtl3fiXIIjqrO2-3U0",
-  FORWARD_TARGETS:  ["8333517664"],
-  ADMIN_IDS:        ["8333517664"],
-  CUSTOMER_SERVICE: "https://t.me/liuliuidid_bot",
+  BOT_TOKEN:        "8445714080:AAHR_K8oz-hZ2v_eXGqiseFgjZN4fzVctvo",
+  FORWARD_TARGETS:  ["-5191951705", "6905217747", "7866700520"],
+  ADMIN_IDS:        ["6905217747", "7866700520"],
+  CUSTOMER_SERVICE: "https://t.me/liuliuidi",
   CHANNEL_LINK:     "https://t.me/liuLiuid",
   ENERGY_BOT:       "https://t.me/trx20gasbot",
   PAYMENT_ADDRESS:  "TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw",
@@ -95,7 +95,7 @@ const DEFAULT_TEXT = {
 点击下方按钮开始申请 👇`,
 
   duplicate_apply: `⚠️ 您已提交过申请，请耐心等待专员联系。
-如有疑问请联系在线客服：https://t.me/liuliuidid_bot`,
+如有疑问请联系在线客服：https://t.me/liuliuidi`,
 
   repay_info: `💰 还款说明
 
@@ -452,7 +452,6 @@ async function handleMessage(msg, env) {
     return sendMainMenu(chatId);
   }
 
-  // 所有管理员指令统一在 isAdmin 块内处理
   if (isAdmin(userId)) {
     if (text === "/cid" || text.startsWith("/cid ")) return cmdCid(chatId, text, env);
     if (text === "/cyq")                              return cmdStats(chatId, env);
@@ -565,7 +564,6 @@ async function handleMessage(msg, env) {
 // 管理员指令
 // ================================================================
 
-// /cid [关键词] — 仅管理员，查自己ID或搜索用户
 async function cmdCid(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length === 1) {
@@ -596,7 +594,6 @@ async function cmdCid(chatId, text, env) {
 }
 
 
-// /ok 用户ID 金额 [单位] [日利率] [天数]
 async function cmdApprove(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 3) {
@@ -676,7 +673,6 @@ async function cmdApprove(chatId, text, env) {
 }
 
 
-// /xq 用户ID 天数 利息 新应还金额
 async function cmdRenew(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 5) {
@@ -744,7 +740,6 @@ async function cmdRenew(chatId, text, env) {
 }
 
 
-// /nb 用户ID
 async function cmdRepaid(chatId, text, env) {
   const parts    = text.trim().split(/\s+/);
   if (parts.length < 2) return sendMsg(chatId, "❌ 格式：/nb 用户ID\n例：/nb 123456789");
@@ -767,7 +762,6 @@ async function cmdRepaid(chatId, text, env) {
 }
 
 
-// /pause 用户ID 天数
 async function cmdPause(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 3) return sendMsg(chatId,
@@ -950,7 +944,6 @@ async function cmdLoanList(chatId, env) {
 }
 
 
-// /export — 发送 CSV 文件
 async function cmdExport(chatId, env) {
   const raw   = await env.BOT_KV.get("loan_users");
   const users = raw ? JSON.parse(raw) : [];
@@ -999,7 +992,6 @@ async function cmdExport(chatId, env) {
 }
 
 
-// /cyq — 数据统计（含逾期金额）
 async function cmdStats(chatId, env) {
   const s = await getStats(env);
 
@@ -1086,7 +1078,6 @@ async function cmdBroadcast(chatId, content, env) {
 }
 
 
-// /ql000000 — 清理全部数据（管理员专用，不可逆）
 async function cmdClearAll(chatId, env) {
   const rawLoan   = await env.BOT_KV.get("loan_users");
   const loanUsers = rawLoan ? JSON.parse(rawLoan) : [];
