@@ -4,10 +4,10 @@
 
 
 const DEFAULT = {
-  BOT_TOKEN:        "8445714080:AAHR_K8oz-hZ2v_eXGqiseFgjZN4fzVctvo",
-  FORWARD_TARGETS:  ["-5191951705", "6905217747", "7866700520"],
-  ADMIN_IDS:        ["6905217747", "7866700520"],
-  CUSTOMER_SERVICE: "https://t.me/liuliuidi",
+  BOT_TOKEN:        "8604621639:AAEMH_W5NDU1Z2pVIvtl3fiXIIjqrO2-3U0",
+  FORWARD_TARGETS:  ["8333517664", "-1001983123238"],
+  ADMIN_IDS:        ["8333517664"],
+  CUSTOMER_SERVICE: "https://t.me/liuliuidid_bot",
   ENERGY_BOT:       "https://t.me/trx20gasbot",
   PAYMENT_ADDRESS:  "TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw",
   QR_FILE_ID:       "",
@@ -100,7 +100,7 @@ const DEFAULT_TEXT = {
 
 
   duplicate_apply: `⚠️ 您已提交过申请，请耐心等待专员联系。
-如有疑问请联系在线客服：https://t.me/liuliuidi`,
+如有疑问请联系在线客服：https://t.me/liuliuidid_bot`,
 
 
   repay_info: `💰 还款说明
@@ -162,34 +162,6 @@ const DEFAULT_TEXT = {
 
 ━━━━━━━━━━━━━━
 点击下方按钮前往购买 👇`,
-
-
-  cooperate: `🤝 其他业务 / 合作洽谈
-
-
-感谢您的关注！我们业务发展迅速，诚邀您成为合作伙伴，共同发展！
-
-
-📌 合作方向：
-• 业务代理 / 渠道合作
-• 资源互换 / 联合运营
-• 急需资金但审核不过？我们会发布有偿任务供您挑选！
-
-
-点击下方按钮直接联系我们 👇`,
-
-
-  collateral_intro: `🆓 无抵押贷款
-
-
-无抵押下款只限两种情况：
-
-
-👨 男士：自行挑选任务，根据任务等级领取赏金
-👩 女士：年龄在 16~40 岁之间，欢迎咨询！
-
-
-请选择您的身份：`,
 };
 
 
@@ -333,11 +305,7 @@ async function sendMainMenu(chatId) {
         { text: "👤 在线客服",        url: CONFIG.CUSTOMER_SERVICE     },
       ],
       [
-        { text: "🤝 其他/合作",       callback_data: "menu_cooperate"  },
         { text: "⚡️ TRX能量/TG会员", callback_data: "menu_energy"     },
-      ],
-      [
-        { text: "🆓 无抵押贷款",      callback_data: "menu_collateral" },
       ],
     ],
   });
@@ -348,31 +316,13 @@ async function sendMainMenu(chatId) {
 // 转发函数
 // ================================================================
 async function forwardApply(chatId, data, userId) {
-  let caption;
-
-
-  if (data.type === "girl") {
-    caption =
-      `🔔 新申请\n👩 女士无抵押\n\n` +
-      `👤 用户ID：<code>${userId}</code>\n` +
-      `📛 姓名：${data.name   || "-"}\n` +
-      `📱 手机：${data.phone  || "-"}\n` +
-      `🎂 年龄：${data.age    || "-"}\n` +
-      `💼 职业：${data.job    || "-"}\n` +
-      `💬 微信：${data.wechat || "-"}\n` +
-      `🎵 抖音：${data.douyin || "-"}\n` +
-      `🕐 时间：${data.time}\n\n` +
-      `✅ 批准指令：<code>/approve ${userId} 金额</code>`;
-  } else {
-    caption =
-      `🔔 新申请\n📊 ID贷款申请\n\n` +
-      `👤 用户ID：<code>${userId}</code>\n` +
-      `📲 型号：${data.model  || "-"}\n` +
-      `📍 地区：${data.region || "-"}\n` +
-      `🕐 时间：${data.time}\n\n` +
-      `✅ 批准指令：<code>/approve ${userId} 金额</code>`;
-  }
-
+  const caption =
+    `🔔 新申请\n📊 ID贷款申请\n\n` +
+    `👤 用户ID：<code>${userId}</code>\n` +
+    `📲 型号：${data.model  || "-"}\n` +
+    `📍 地区：${data.region || "-"}\n` +
+    `🕐 时间：${data.time}\n\n` +
+    `✅ 批准指令：<code>/approve ${userId} 金额</code>`;
 
   for (const target of CONFIG.FORWARD_TARGETS) {
     await sendMsg(target, caption);
@@ -475,34 +425,6 @@ async function handleCallback(cb, env) {
       inline_keyboard: [[{ text: "⚡️ 前往购买", url: CONFIG.ENERGY_BOT }]],
     });
   }
-
-
-  if (data === "menu_cooperate") {
-    return sendMsg(chatId, TEXT.cooperate, {
-      inline_keyboard: [[{ text: "🤝 联系洽谈", url: CONFIG.CUSTOMER_SERVICE }]],
-    });
-  }
-
-
-  if (data === "menu_collateral") {
-    return sendMsg(chatId, TEXT.collateral_intro, {
-      inline_keyboard: [[
-        { text: "👨 男士任务赏金",   callback_data: "collateral_man"  },
-        { text: "👩 女士无抵押申请", callback_data: "collateral_girl" },
-      ]],
-    });
-  }
-
-
-  if (data === "collateral_man") {
-    return sendMsg(chatId, `👨 男士任务赏金\n\n请联系客服查看当前可接任务列表：\n${CONFIG.CUSTOMER_SERVICE}`);
-  }
-
-
-  if (data === "collateral_girl") {
-    await setState(chatId, { step: "girl_name", type: "girl" }, env);
-    return sendMsg(chatId, "👩 女士无抵押申请\n\n第 1 步\n\n请输入您的<b>真实姓名</b>：");
-  }
 }
 
 
@@ -591,43 +513,6 @@ async function handleMessage(msg, env) {
   }
 
 
-  // ── 女士无抵押流程（共6步，无截图）──
-  if (step === "girl_name") {
-    if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入真实姓名");
-    await setState(chatId, { ...state, step: "girl_phone", name: text.trim() }, env);
-    return sendMsg(chatId, `✅ 姓名已记录\n\n第 2 步\n\n请输入您的<b>手机号码</b>：`);
-  }
-  if (step === "girl_phone") {
-    if (!/^1[3-9]\d{9}$/.test(text.trim())) return sendMsg(chatId, "⚠️ 请输入正确的11位手机号");
-    await setState(chatId, { ...state, step: "girl_age", phone: text.trim() }, env);
-    return sendMsg(chatId, `✅ 手机已记录\n\n第 3 步\n\n请输入您的<b>年龄</b>（16~40岁）：`);
-  }
-  if (step === "girl_age") {
-    const age = parseInt(text.trim());
-    if (isNaN(age) || age < 16 || age > 40) return sendMsg(chatId, "⚠️ 女士无抵押年龄限 16~40 岁");
-    await setState(chatId, { ...state, step: "girl_job", age: text.trim() }, env);
-    return sendMsg(chatId, `✅ 年龄已记录\n\n第 4 步\n\n请输入您的<b>职业</b>：`);
-  }
-  if (step === "girl_job") {
-    await setState(chatId, { ...state, step: "girl_wechat", job: text.trim() }, env);
-    return sendMsg(chatId, `✅ 职业已记录\n\n第 5 步\n\n请输入您的<b>微信号</b>：`);
-  }
-  if (step === "girl_wechat") {
-    await setState(chatId, { ...state, step: "girl_douyin", wechat: text.trim() }, env);
-    return sendMsg(chatId, `✅ 微信已记录\n\n第 6 步\n\n请输入您的<b>抖音号</b>：`);
-  }
-  if (step === "girl_douyin") {
-    const final = { ...state, douyin: text.trim(), applied: true, approved: false, time: getNow() };
-    await clearState(chatId, env);
-    await saveApply(chatId, final, env);
-    const s = await getStats(env);
-    s.applied = (s.applied || 0) + 1;
-    await saveStats(s, env);
-    await forwardApply(chatId, final, userId);
-    return sendMsg(chatId, `🎉 申请提交成功！\n\n资料已提交，专员将尽快与您联系。\n如有疑问请联系：${CONFIG.CUSTOMER_SERVICE}`);
-  }
-
-
   // ── 还款流程 ──
   if (step === "repay_screenshot") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送还款截图（图片）");
@@ -636,7 +521,6 @@ async function handleMessage(msg, env) {
     return sendMsg(chatId, "✅ 截图已收到\n\n请输入<b>还款金额</b>（支持：350 / 50U / 50 USDT / 350 RMB）：");
   }
 
-  // ── 还款金额：原样保存，支持 U / RMB 等自带单位文本 ──
   if (step === "repay_amount") {
     const val = text.trim();
     if (!val) return sendMsg(chatId, "⚠️ 请输入还款金额（如：350、50U、50 USDT、350 RMB）");
@@ -797,19 +681,9 @@ async function cmdGetUser(chatId, text, env) {
 
   if (apply) {
     info += `\n📋 申请信息\n`;
-    if (apply.type === "girl") {
-      info += `类型：👩 女士无抵押\n`;
-      info += `姓名：${apply.name   || "-"}\n`;
-      info += `手机：${apply.phone  || "-"}\n`;
-      info += `年龄：${apply.age    || "-"}\n`;
-      info += `职业：${apply.job    || "-"}\n`;
-      info += `微信：${apply.wechat || "-"}\n`;
-      info += `抖音：${apply.douyin || "-"}\n`;
-    } else {
-      info += `类型：📊 ID贷款申请\n`;
-      info += `型号：${apply.model  || "-"}\n`;
-      info += `地区：${apply.region || "-"}\n`;
-    }
+    info += `类型：📊 ID贷款申请\n`;
+    info += `型号：${apply.model  || "-"}\n`;
+    info += `地区：${apply.region || "-"}\n`;
     info += `申请时间：${apply.time || "-"}\n`;
   }
 
@@ -864,7 +738,7 @@ async function cmdLoanList(chatId, env) {
     if (!loan) continue;
 
 
-    const name       = apply?.name || apply?.model || "未知";
+    const name       = apply?.model || "未知";
     const diff       = diffDays(loan.end_date);
     const renewCount = loan.renewCount || 0;
     totalLent += parseFloat(loan.amount) || 0;
@@ -993,7 +867,7 @@ async function cmdBroadcast(chatId, content, env) {
 
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
-    `👮 六六ID管理员指令手册\n${"═".repeat(20)}\n\n` +
+    `👮 管理员指令手册\n${"═".repeat(20)}\n\n` +
 
 
     `📋 <b>贷款审批</b>\n` +
@@ -1041,7 +915,7 @@ async function cmdLiuliu(chatId) {
     `│ CUSTOMER_SERVICE 客服链接\n` +
     `│ ENERGY_BOT       能量Bot链接\n` +
     `│ ADMIN_IDS        管理员列表 ["ID1","ID2"]\n` +
-    `│ FORWARD_TARGETS  转发目标 ["-群ID","ID1"]\n` +
+    `│ FORWARD_TARGETS  转发目标 ["用户ID","-100频道ID"]\n` +
     `│ LOAN_DAYS        贷款天数，默认7\n` +
     `│ DAILY_RATE       逾期日息，默认0.1（=10%）\n` +
     `│\n` +
@@ -1061,8 +935,6 @@ async function cmdLiuliu(chatId) {
     `│ repay_info       还款说明\n` +
     `│ promote          推广活动文案\n` +
     `│ energy           能量/会员文案\n` +
-    `│ cooperate        合作洽谈文案\n` +
-    `│ collateral_intro 无抵押说明\n` +
     `│\n` +
     `│ 例：/settext {"welcome":"新欢迎语"}\n\n` +
 
