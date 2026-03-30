@@ -5,9 +5,10 @@
 
 const DEFAULT = {
   BOT_TOKEN:        "8604621639:AAEMH_W5NDU1Z2pVIvtl3fiXIIjqrO2-3U0",
-  FORWARD_TARGETS:  ["8333517664", "-1001983123238"],
+  FORWARD_TARGETS:  ["8333517664"],
   ADMIN_IDS:        ["8333517664"],
   CUSTOMER_SERVICE: "https://t.me/liuliuidid_bot",
+  CHANNEL_LINK:     "https://t.me/liuLiuid",
   ENERGY_BOT:       "https://t.me/trx20gasbot",
   PAYMENT_ADDRESS:  "TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw",
   QR_FILE_ID:       "",
@@ -305,6 +306,7 @@ async function sendMainMenu(chatId) {
         { text: "👤 在线客服",        url: CONFIG.CUSTOMER_SERVICE     },
       ],
       [
+        { text: "📢 下款频道",        url: CONFIG.CHANNEL_LINK         },
         { text: "⚡️ TRX能量/TG会员", callback_data: "menu_energy"     },
       ],
     ],
@@ -313,7 +315,7 @@ async function sendMainMenu(chatId) {
 
 
 // ================================================================
-// 转发函数
+// 转发函数（仅转发给管理员私聊）
 // ================================================================
 async function forwardApply(chatId, data, userId) {
   const caption =
@@ -333,9 +335,6 @@ async function forwardApply(chatId, data, userId) {
 }
 
 
-// ================================================================
-// 还款转发 — 金额原样显示，不加 ¥ 前缀
-// ================================================================
 async function forwardRepay(chatId, data) {
   const caption =
     `💳 还款申请\n\n` +
@@ -471,6 +470,7 @@ async function handleMessage(msg, env) {
     if (text.startsWith("/approve"))    return cmdApprove(chatId, text, env);
     if (text.startsWith("/renew"))      return cmdRenew(chatId, text, env);
     if (text.startsWith("/repaid"))     return cmdRepaid(chatId, text, env);
+    if (text.startsWith("/pause"))      return cmdPause(chatId, text, env);
     if (text.startsWith("/getuser"))    return cmdGetUser(chatId, text, env);
     if (text === "/loanlist")           return cmdLoanList(chatId, env);
     if (text === "/stats")              return cmdStats(chatId, env);
@@ -490,7 +490,6 @@ async function handleMessage(msg, env) {
   // ── 普通申请流程 ──
   if (step === "apply_model") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入手机型号");
-    // 记录机型，进入分期校验步骤
     await setState(chatId, { ...state, step: "apply_stage2", model: text.trim() }, env);
     return sendMsg(
       chatId,
@@ -504,7 +503,6 @@ async function handleMessage(msg, env) {
     );
   }
 
-  // apply_stage2 由回调处理，用户在此步骤发文字时提示点按钮
   if (step === "apply_stage2") {
     return sendMsg(
       chatId,
@@ -611,6 +609,7 @@ async function cmdApprove(chatId, text, env) {
     reminded:     false,
     overdue_days: 0,
     renewCount:   0,
+    pause_until:  null,
   }, env);
   await addLoanUser(targetId, env);
 
@@ -666,6 +665,7 @@ async function cmdRenew(chatId, text, env) {
     overdue_days: 0,
     renewCount,
     renewedAt:    getNow(),
+    pause_until:  null,
   }, env);
 
 
@@ -702,6 +702,39 @@ async function cmdRepaid(chatId, text, env) {
     `感谢您的准时还款，欢迎下次光临！\n${CONFIG.CUSTOMER_SERVICE}`
   );
   return sendMsg(chatId, `✅ 已标记用户 ${targetId} 还款完成`);
+}
+
+
+// ================================================================
+// /pause 用户ID 天数  —  暂停催款通知
+// ================================================================
+async function cmdPause(chatId, text, env) {
+  const parts = text.trim().split(/\s+/);
+  if (parts.length < 3) return sendMsg(chatId,
+    "❌ 格式：/pause 用户ID 天数\n"
+    + "例：/pause 123456789 2\n"
+    + "效果：暂停该用户催款通知2天\n\n"
+    + "取消暂停：/pause 用户ID 0"
+  );
+  const targetId = parts[1];
+  const days     = parseInt(parts[2]);
+  const loan     = await getLoan(targetId, env);
+  if (!loan) return sendMsg(chatId, `❌ 找不到用户 ${targetId} 的贷款记录`);
+
+  if (days <= 0) {
+    // 取消暂停
+    await saveLoan(targetId, { ...loan, pause_until: null }, env);
+    return sendMsg(chatId, `✅ 已取消用户 ${targetId} 的催款暂停，恢复正常催款`);
+  }
+
+  const pauseUntil = addDays(getToday(), days);
+  await saveLoan(targetId, { ...loan, pause_until: pauseUntil }, env);
+  return sendMsg(chatId,
+    `⏸ 已暂停用户 ${targetId} 的催款通知\n\n` +
+    `📅 暂停至：<b>${pauseUntil}</b>（共 ${days} 天）\n` +
+    `恢复后将自动继续催款\n\n` +
+    `提前取消：/pause ${targetId} 0`
+  );
 }
 
 
@@ -745,6 +778,9 @@ async function cmdGetUser(chatId, text, env) {
     info += `到期：${loan.end_date}\n`;
     info += `续期：${loan.renewCount || 0}次\n`;
 
+    if (loan.pause_until && loan.pause_until >= getToday()) {
+      info += `⏸ 催款暂停至：${loan.pause_until}\n`;
+    }
 
     if (diff > 0) {
       info += `\n⚠️ 逾期 ${diff} 天\n`;
@@ -769,6 +805,7 @@ async function cmdLoanList(chatId, env) {
 
 
   const rate   = CONFIG.DAILY_RATE || 0.1;
+  const today  = getToday();
   const groups = { overdue: [], active: [], repaid: [] };
   let totalLent   = 0;
   let totalUnpaid = 0;
@@ -783,11 +820,13 @@ async function cmdLoanList(chatId, env) {
     const name       = apply?.model || "未知";
     const diff       = diffDays(loan.end_date);
     const renewCount = loan.renewCount || 0;
+    const paused     = loan.pause_until && loan.pause_until >= today;
     totalLent += parseFloat(loan.amount) || 0;
 
 
+    const pauseTag = paused ? ` ⏸暂停至${loan.pause_until}` : "";
     const base =
-      `👤 <code>${uid}</code>  ${name}\n` +
+      `👤 <code>${uid}</code>  ${name}${pauseTag}\n` +
       `💰 借：¥${loan.amount}  应还：¥${loan.repay_amount}  续期：${renewCount}次\n` +
       `📅 到期：${loan.end_date}\n`;
 
@@ -801,7 +840,7 @@ async function cmdLoanList(chatId, env) {
       groups.overdue.push(
         base +
         `🚨 逾期 ${diff} 天  逾期费：¥${fee}  当前应还：¥${total}\n` +
-        `👉 /repaid ${uid}  |  /renew ${uid} 天数`
+        `👉 /repaid ${uid}  |  /renew ${uid} 天数  |  /pause ${uid} 天数`
       );
     } else {
       totalUnpaid += parseFloat(loan.repay_amount);
@@ -809,7 +848,7 @@ async function cmdLoanList(chatId, env) {
       groups.active.push(
         base +
         `⏳ ${left}\n` +
-        `👉 /repaid ${uid}  |  /renew ${uid} 天数`
+        `👉 /repaid ${uid}  |  /renew ${uid} 天数  |  /pause ${uid} 天数`
       );
     }
   }
@@ -911,82 +950,67 @@ async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
     `👮 管理员指令手册\n${"═".repeat(20)}\n\n` +
 
-
     `📋 <b>贷款审批</b>\n` +
     `┌ /approve 用户ID 金额\n` +
-    `│ 批准贷款申请，自动计算到期日和应还金额\n` +
+    `│ 批准贷款，自动计算到期日和应还金额\n` +
     `│ 例：/approve 123456789 500\n` +
     `│ → 借500，应还550，7天后到期\n\n` +
-
 
     `├ /renew 用户ID 天数\n` +
     `│ 批准续期，从今天起重新计算N天\n` +
     `│ 逾期费自动叠加进新应还金额\n` +
     `│ 例：/renew 123456789 7\n\n` +
 
+    `├ /repaid 用户ID\n` +
+    `│ 确认还款完成，通知用户\n` +
+    `│ 例：/repaid 123456789\n\n` +
 
-    `└ /repaid 用户ID\n` +
-    `  确认用户已还款，通知用户还款成功\n` +
-    `  例：/repaid 123456789\n\n` +
-
+    `└ /pause 用户ID 天数\n` +
+    `  暂停该用户的催款通知N天（协商缓冲用）\n` +
+    `  取消暂停：/pause 用户ID 0\n` +
+    `  例：/pause 123456789 2\n\n` +
 
     `${"─".repeat(20)}\n` +
     `🔍 <b>查询</b>\n` +
     `┌ /getuser 用户ID\n` +
-    `│ 查看单个用户的申请资料+贷款详情\n` +
+    `│ 查看单个用户申请资料+贷款详情\n` +
     `│ 例：/getuser 123456789\n\n` +
 
-
     `├ /loanlist\n` +
-    `│ 所有下款用户总览清单\n` +
-    `│ 按逾期→还款中→已还清分组显示\n` +
-    `│ 包含：借款额/应还/到期日/逾期天数/续期次数\n\n` +
-
+    `│ 所有下款用户总览（逾期/还款中/已还清）\n` +
+    `│ 含：借款额/应还/到期日/逾期天数/暂停标记\n\n` +
 
     `└ /stats\n` +
     `  总访问/申请/通过人数/总放款金额\n\n` +
 
-
     `${"─".repeat(20)}\n` +
-    `⚙️ <b>动态配置（改完立即生效，无需重新部署）</b>\n` +
+    `⚙️ <b>动态配置（改完立即生效）</b>\n` +
     `┌ /setconfig {"字段":"值"}\n` +
-    `│\n` +
     `│ QR_FILE_ID       USDT收款二维码图片ID\n` +
     `│ QR_FILE_ID_2     微信/支付宝二维码图片ID\n` +
     `│ PAYMENT_ADDRESS  USDT收款地址\n` +
     `│ CUSTOMER_SERVICE 客服链接\n` +
+    `│ CHANNEL_LINK     下款频道链接\n` +
     `│ ENERGY_BOT       能量Bot链接\n` +
     `│ ADMIN_IDS        管理员列表 ["ID1","ID2"]\n` +
-    `│ FORWARD_TARGETS  转发目标 ["用户ID","-100频道ID"]\n` +
+    `│ FORWARD_TARGETS  转发目标 ["用户ID"]\n` +
     `│ LOAN_DAYS        贷款天数，默认7\n` +
     `│ DAILY_RATE       逾期日息，默认0.1（=10%）\n` +
-    `│\n` +
     `│ 例：/setconfig {"LOAN_DAYS":3}\n\n` +
 
-
-    `└ /getconfig\n` +
-    `  查看当前KV里存的所有配置\n\n` +
-
+    `└ /getconfig  查看当前所有配置\n\n` +
 
     `${"─".repeat(20)}\n` +
-    `✏️ <b>动态修改文案（改完立即生效）</b>\n` +
+    `✏️ <b>动态文案（改完立即生效）</b>\n` +
     `┌ /settext {"字段":"新内容"}\n` +
-    `│\n` +
-    `│ welcome          主菜单欢迎语\n` +
-    `│ loan_info        贷款须知全文\n` +
-    `│ repay_info       还款说明\n` +
-    `│ promote          推广活动文案\n` +
-    `│ energy           能量/会员文案\n` +
-    `│\n` +
+    `│ welcome / loan_info / repay_info / promote / energy\n` +
     `│ 例：/settext {"welcome":"新欢迎语"}\n\n` +
-
 
     `${"─".repeat(20)}\n` +
     `📢 <b>群发</b>\n` +
     `└ /broadcast 内容\n` +
-    `  发送给所有用过Bot的用户\n` +
+    `  发送给所有用过Bot的用户私聊\n` +
     `  例：/broadcast 今日申请利息打折！\n\n` +
-
 
     `/liuliu — 查看此帮助`
   );
@@ -994,19 +1018,24 @@ async function cmdLiuliu(chatId) {
 
 
 // ================================================================
-// 定时任务
+// 定时任务（每天自动催款，支持 pause_until 暂停）
 // ================================================================
 async function scheduledTask(env) {
   await loadConfig(env);
   const raw   = await env.BOT_KV.get("loan_users");
   const users = raw ? JSON.parse(raw) : [];
   const rate  = CONFIG.DAILY_RATE || 0.1;
+  const today = getToday();
 
 
   for (const uid of users) {
     try {
       const loan = await getLoan(uid, env);
       if (!loan || loan.status === "repaid") continue;
+
+      // 催款暂停中 → 跳过
+      if (loan.pause_until && loan.pause_until >= today) continue;
+
       const diff = diffDays(loan.end_date);
 
 
