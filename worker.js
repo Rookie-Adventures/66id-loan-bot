@@ -378,6 +378,23 @@ async function handleCallback(cb, env) {
   }
 
 
+  // ── 分期校验按钮 ──
+  if (data === "apply_stage2_normal") {
+    const state = await getState(chatId, env);
+    if (!state || state.step !== "apply_stage2") return sendMainMenu(chatId);
+    await setState(chatId, { ...state, step: "apply_region" }, env);
+    return sendMsg(chatId, `✅ 型号已记录\n\n第 2 步\n\n请输入您<b>现在所在地区</b>（如：广东广州）：`);
+  }
+
+  if (data === "apply_stage2_installment") {
+    await clearState(chatId, env);
+    return sendMsg(
+      chatId,
+      `❌ 很抱歉，分期未结清的设备暂不符合申请条件。\n\n如有疑问，请联系在线客服：\n${CONFIG.CUSTOMER_SERVICE}`
+    );
+  }
+
+
   if (data === "menu_repay") {
     return sendMsg(chatId, TEXT.repay_info, {
       inline_keyboard: [
@@ -470,12 +487,37 @@ async function handleMessage(msg, env) {
   const step = state.step;
 
 
-  // ── 普通申请流程（共6步：型号→地区→截图×4）──
+  // ── 普通申请流程 ──
   if (step === "apply_model") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入手机型号");
-    await setState(chatId, { ...state, step: "apply_region", model: text.trim() }, env);
-    return sendMsg(chatId, `✅ 型号已记录\n\n第 2 步\n\n请输入您<b>现在所在地区</b>（如：广东广州）：`);
+    // 记录机型，进入分期校验步骤
+    await setState(chatId, { ...state, step: "apply_stage2", model: text.trim() }, env);
+    return sendMsg(
+      chatId,
+      "📋 申请额度\n\n补充问题：\n\n这台手机是<b>分期未结清</b>的设备吗？",
+      {
+        inline_keyboard: [[
+          { text: "✅ 我不是分期", callback_data: "apply_stage2_normal"      },
+          { text: "❌ 我是分期",   callback_data: "apply_stage2_installment" },
+        ]],
+      }
+    );
   }
+
+  // apply_stage2 由回调处理，用户在此步骤发文字时提示点按钮
+  if (step === "apply_stage2") {
+    return sendMsg(
+      chatId,
+      "⚠️ 请点击上方按钮选择是否分期👆",
+      {
+        inline_keyboard: [[
+          { text: "✅ 我不是分期", callback_data: "apply_stage2_normal"      },
+          { text: "❌ 我是分期",   callback_data: "apply_stage2_installment" },
+        ]],
+      }
+    );
+  }
+
   if (step === "apply_region") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入所在地区");
     await setState(chatId, { ...state, step: "apply_shot1", region: text.trim() }, env);
