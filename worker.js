@@ -1,5 +1,5 @@
 // ================================================================
-// 66ID 贷款机器人 — Cloudflare Workers 完整版 v9
+// 66ID 贷款机器人 — Cloudflare Workers 完整版 v10
 // ================================================================
 
 
@@ -452,29 +452,23 @@ async function handleMessage(msg, env) {
     return sendMainMenu(chatId);
   }
 
-  // /cid 任何人都可以用，获取自己的用户ID
-  if (text === "/cid") {
-    return sendMsg(chatId,
-      `🪪 您的 Telegram 用户ID\n\n` +
-      `<code>${userId}</code>\n\n` +
-      `直接点击上方数字即可复制`
-    );
-  }
-
+  // 所有管理员指令统一在 isAdmin 块内处理
   if (isAdmin(userId)) {
-    if (text.startsWith("/ok"))         return cmdApprove(chatId, text, env);
-    if (text.startsWith("/xq"))         return cmdRenew(chatId, text, env);
-    if (text.startsWith("/nb"))         return cmdRepaid(chatId, text, env);
-    if (text.startsWith("/pause"))      return cmdPause(chatId, text, env);
-    if (text.startsWith("/getuser"))    return cmdGetUser(chatId, text, env);
-    if (text === "/loanlist")           return cmdLoanList(chatId, env);
-    if (text === "/export")             return cmdExport(chatId, env);
-    if (text === "/stats")              return cmdStats(chatId, env);
-    if (text.startsWith("/setconfig ")) return cmdSetConfig(chatId, text.slice(10), env);
-    if (text.startsWith("/settext "))   return cmdSetText(chatId, text.slice(9), env);
-    if (text.startsWith("/broadcast ")) return cmdBroadcast(chatId, text.slice(11), env);
-    if (text === "/getconfig")          return cmdGetConfig(chatId, env);
-    if (text === "/liuliu")             return cmdLiuliu(chatId);
+    if (text === "/cid" || text.startsWith("/cid ")) return cmdCid(chatId, text, env);
+    if (text === "/cyq")                              return cmdStats(chatId, env);
+    if (text.startsWith("/ok"))                       return cmdApprove(chatId, text, env);
+    if (text.startsWith("/xq"))                       return cmdRenew(chatId, text, env);
+    if (text.startsWith("/nb"))                       return cmdRepaid(chatId, text, env);
+    if (text.startsWith("/pause"))                    return cmdPause(chatId, text, env);
+    if (text.startsWith("/getuser"))                  return cmdGetUser(chatId, text, env);
+    if (text === "/loanlist")                         return cmdLoanList(chatId, env);
+    if (text === "/export")                           return cmdExport(chatId, env);
+    if (text.startsWith("/setconfig "))               return cmdSetConfig(chatId, text.slice(10), env);
+    if (text.startsWith("/settext "))                 return cmdSetText(chatId, text.slice(9), env);
+    if (text.startsWith("/broadcast "))               return cmdBroadcast(chatId, text.slice(11), env);
+    if (text === "/getconfig")                        return cmdGetConfig(chatId, env);
+    if (text === "/liuliu")                           return cmdLiuliu(chatId);
+    if (text === "/ql000000")                         return cmdClearAll(chatId, env);
   }
 
   const state = await getState(chatId, env);
@@ -570,6 +564,37 @@ async function handleMessage(msg, env) {
 // ================================================================
 // 管理员指令
 // ================================================================
+
+// /cid [关键词] — 仅管理员，查自己ID或搜索用户
+async function cmdCid(chatId, text, env) {
+  const parts = text.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return sendMsg(chatId,
+      `🪪 您的 Telegram 用户ID\n\n` +
+      `<code>${chatId}</code>\n\n` +
+      `直接点击上方数字即可复制`
+    );
+  }
+  const keyword = parts.slice(1).join(" ").toLowerCase();
+  const rawLoan = await env.BOT_KV.get("loan_users");
+  const loanUsers = rawLoan ? JSON.parse(rawLoan) : [];
+  const allUsers  = await getAllUsers(env);
+  const allIds    = [...new Set([...loanUsers, ...allUsers])];
+
+  const results = [];
+  for (const uid of allIds) {
+    const apply = await getApply(uid, env);
+    const model  = (apply?.model  || "").toLowerCase();
+    const region = (apply?.region || "").toLowerCase();
+    if (uid.includes(keyword) || model.includes(keyword) || region.includes(keyword)) {
+      results.push(`ID: <code>${uid}</code>  型号:${apply?.model||"-"}  地区:${apply?.region||"-"}`);
+    }
+  }
+
+  if (results.length === 0) return sendMsg(chatId, `❌ 未找到匹配 "${keyword}" 的用户\n\n可按用户ID片段、手机型号、地区搜索`);
+  return sendLong(chatId, `🔍 查询结果（关键词：${keyword}）共 ${results.length} 条\n\n` + results.join("\n"));
+}
+
 
 // /ok 用户ID 金额 [单位] [日利率] [天数]
 async function cmdApprove(chatId, text, env) {
@@ -672,8 +697,8 @@ async function cmdRenew(chatId, text, env) {
   const interest   = parseFloat(parts[3]);
   const newRepay   = parseFloat(parts[4]);
 
-  if (isNaN(days) || days <= 0)     return sendMsg(chatId, "❌ 天数格式错误");
-  if (isNaN(interest) || interest < 0) return sendMsg(chatId, "❌ 利息格式错误");
+  if (isNaN(days) || days <= 0)         return sendMsg(chatId, "❌ 天数格式错误");
+  if (isNaN(interest) || interest < 0)  return sendMsg(chatId, "❌ 利息格式错误");
   if (isNaN(newRepay) || newRepay <= 0) return sendMsg(chatId, "❌ 新应还金额格式错误");
 
   const loan = await getLoan(targetId, env);
@@ -842,9 +867,9 @@ async function cmdLoanList(chatId, env) {
   const today  = getToday();
   const groups = { overdue: [], active: [], repaid: [] };
 
-  // 分币种统计
   let lentRMB = 0, lentUSDT = 0;
   let unpaidRMB = 0, unpaidUSDT = 0;
+  let overdueRMB = 0, overdueUSDT = 0;
 
   for (const uid of users) {
     const loan  = await getLoan(uid, env);
@@ -859,7 +884,6 @@ async function cmdLoanList(chatId, env) {
     const renewCount = loan.renewCount || 0;
     const paused    = loan.pause_until && loan.pause_until >= today;
 
-    // 累计放款
     if (unit === "RMB")  lentRMB  += parseFloat(loan.amount) || 0;
     if (unit === "USDT") lentUSDT += parseFloat(loan.amount) || 0;
 
@@ -874,8 +898,8 @@ async function cmdLoanList(chatId, env) {
     } else if (diff > 0) {
       const fee   = (parseFloat(loan.repay_amount) * rate * diff).toFixed(unit === "USDT" ? 2 : 0);
       const total = (parseFloat(loan.repay_amount) + parseFloat(fee)).toFixed(unit === "USDT" ? 2 : 0);
-      if (unit === "RMB")  unpaidRMB  += parseFloat(total);
-      if (unit === "USDT") unpaidUSDT += parseFloat(total);
+      if (unit === "RMB")  { unpaidRMB  += parseFloat(total); overdueRMB  += parseFloat(total); }
+      if (unit === "USDT") { unpaidUSDT += parseFloat(total); overdueUSDT += parseFloat(total); }
       groups.overdue.push(
         base +
         `🚨 逾期 ${diff} 天  逾期费：${unitLabel}${fee}  当前应还：${unitLabel}${total}\n` +
@@ -903,6 +927,9 @@ async function cmdLoanList(chatId, env) {
     `\n📥 待回收\n` +
     `  人民币：¥${unpaidRMB.toLocaleString()}\n` +
     `  USDT：${unpaidUSDT.toFixed(2)} U\n` +
+    `\n🚨 逾期应收\n` +
+    `  人民币：¥${overdueRMB.toLocaleString()}\n` +
+    `  USDT：${overdueUSDT.toFixed(2)} U\n` +
     `\n✅ 已通过：${s.approved || 0} 人\n` +
     `\n📎 导出明细：/export\n`;
 
@@ -937,9 +964,9 @@ async function cmdExport(chatId, env) {
     const apply = await getApply(uid, env);
     if (!loan) continue;
 
-    const diff       = diffDays(loan.end_date);
+    const diff        = diffDays(loan.end_date);
     const overdueDays = loan.status !== "repaid" && diff > 0 ? diff : 0;
-    const rate       = loan.rate || CONFIG.DAILY_RATE || 0.1;
+    const rate        = loan.rate || CONFIG.DAILY_RATE || 0.1;
 
     const row = [
       uid,
@@ -962,25 +989,46 @@ async function cmdExport(chatId, env) {
     rows.push(row.map(escCsv).join(","));
   }
 
-  const csv      = "\uFEFF" + rows.join("\r\n");  // BOM 让 Excel 正确显示中文
+  const csv      = "\uFEFF" + rows.join("\r\n");
   const filename = `loanlist_${getToday()}.csv`;
   const res = await sendDocument(chatId, filename, csv, `📎 下款明细导出 ${getToday()}，共 ${users.length} 条`);
 
   if (!res.ok) {
-    // fallback：直接发文本
     await sendMsg(chatId, "⚠️ 文件发送失败，请稍后重试");
   }
 }
 
 
+// /cyq — 数据统计（含逾期金额）
 async function cmdStats(chatId, env) {
   const s = await getStats(env);
+
+  const raw   = await env.BOT_KV.get("loan_users");
+  const users = raw ? JSON.parse(raw) : [];
+  let overdueRMB = 0, overdueUSDT = 0;
+
+  for (const uid of users) {
+    const loan = await getLoan(uid, env);
+    if (!loan || loan.status === "repaid") continue;
+    const diff = diffDays(loan.end_date);
+    if (diff > 0) {
+      const rate  = loan.rate || CONFIG.DAILY_RATE || 0.1;
+      const fee   = parseFloat(loan.repay_amount) * rate * diff;
+      const total = parseFloat(loan.repay_amount) + fee;
+      if ((loan.unit || "RMB") === "RMB") overdueRMB  += total;
+      else                                 overdueUSDT += total;
+    }
+  }
+
   return sendMsg(chatId,
     `📊 数据统计\n${"─".repeat(16)}\n` +
     `👣 累计访问：${s.visitors     || 0} 次\n` +
     `📝 申请总数：${s.applied      || 0} 人\n` +
     `✅ 审核通过：${s.approved     || 0} 人\n` +
-    `💰 总放款额：¥${(s.total_amount || 0).toLocaleString()}`
+    `💰 总放款额：¥${(s.total_amount || 0).toLocaleString()}\n` +
+    `\n🚨 当前逾期应收\n` +
+    `  人民币：¥${overdueRMB.toFixed(0)}\n` +
+    `  USDT：${overdueUSDT.toFixed(2)} U`
   );
 }
 
@@ -1038,6 +1086,28 @@ async function cmdBroadcast(chatId, content, env) {
 }
 
 
+// /ql000000 — 清理全部数据（管理员专用，不可逆）
+async function cmdClearAll(chatId, env) {
+  const rawLoan   = await env.BOT_KV.get("loan_users");
+  const loanUsers = rawLoan ? JSON.parse(rawLoan) : [];
+  const allUsers  = await getAllUsers(env);
+  const allIds    = [...new Set([...loanUsers, ...allUsers])];
+
+  for (const uid of allIds) {
+    await env.BOT_KV.delete(`state_${uid}`);
+    await env.BOT_KV.delete(`apply_${uid}`);
+    await env.BOT_KV.delete(`loan_${uid}`);
+  }
+  await env.BOT_KV.delete("loan_users");
+  await env.BOT_KV.delete("all_users");
+  await env.BOT_KV.delete("stats");
+
+  return sendMsg(chatId,
+    `🧹 清理完成\n\n已删除 ${allIds.length} 个用户的所有数据\n含：状态、申请记录、贷款记录、统计数据\n\n⚠️ 此操作不可逆`
+  );
+}
+
+
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
     `👮 管理员指令手册\n${"═".repeat(20)}\n\n` +
@@ -1071,13 +1141,15 @@ async function cmdLiuliu(chatId) {
     `${"─".repeat(20)}\n` +
     `🔍 <b>查询 & 导出</b>\n` +
     `┌ /getuser 用户ID   查看申请+贷款详情\n` +
-    `├ /loanlist         所有用户总览（含RMB/USDT分类统计）\n` +
+    `├ /loanlist         所有用户总览（含逾期金额统计）\n` +
     `├ /export           导出全部明细为 CSV 文件\n` +
-    `└ /stats            数据统计\n\n` +
+    `└ /cyq              数据统计（含逾期应收金额）\n\n` +
 
     `${"─".repeat(20)}\n` +
-    `🪪 <b>查询用户ID</b>\n` +
-    `└ /cid  用户自助获取自己的 Telegram ID（所有人可用）\n\n` +
+    `🪪 <b>查询用户ID（管理员专用）</b>\n` +
+    `┌ /cid              查看自己的管理员ID\n` +
+    `└ /cid 关键词       按用户ID片段/型号/地区搜索用户\n` +
+    `  例：/cid 广东  /cid iPhone14  /cid 12345\n\n` +
 
     `${"─".repeat(20)}\n` +
     `⚙️ <b>动态配置</b>\n` +
@@ -1094,6 +1166,10 @@ async function cmdLiuliu(chatId) {
     `${"─".repeat(20)}\n` +
     `📢 <b>群发</b>\n` +
     `└ /broadcast 内容\n\n` +
+
+    `${"─".repeat(20)}\n` +
+    `🧹 <b>数据清理</b>\n` +
+    `└ /ql000000  清除全部用户数据（⚠️不可逆）\n\n` +
 
     `/liuliu — 查看此帮助`
   );
