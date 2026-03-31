@@ -1,5 +1,5 @@
 // ================================================================
-// 66ID 贷款机器人 — Cloudflare Workers 完整版 v12
+// 66ID 贷款机器人 — Cloudflare Workers 完整版 v13
 // ================================================================
 
 
@@ -36,143 +36,19 @@ async function loadConfig(env) {
 // 文案
 // ================================================================
 const DEFAULT_TEXT = {
-  welcome: `欢迎使用 💰六六ID贷款助手！
+  welcome: `欢迎使用 💰六六ID贷款助手！\n\n🍎六六苹果ID贷，轻松帮您周转资金💸\n我们在ID贷领域深耕多年，积累了丰富服务经验和口碑✨\n为了提供更安全便捷的服务，已使用公群担保🛡️经营有保障✅\n我们承诺会始终坚持安全可靠、高额度、低利息，让用户用得放心❤️\n\n📋资料简单：登录ID即可（不影响正常使用）\n⚡审核快：最快5分钟到账💨\n🎁提前还款利息减半！\n👑老客户享提额度＋降息福利💎\n\n同时为了回馈新老用户的信任🙏\n我们特意推出了🤖自助能量机器人，只需2.5 TRX即可进行一次USDT转账💱\n帮您大大节省转账手续费💰！\n\n💵支持下款方式：\nUSDT 🪙 微信💚 支付宝🧧\n\n🚫安全无套路，拒绝高息陷阱！\n💰高额度 · 💫低利息 · 🔒安全可靠`,
 
-🍎六六苹果ID贷，轻松帮您周转资金💸
-我们在ID贷领域深耕多年，积累了丰富服务经验和口碑✨
-为了提供更安全便捷的服务，已使用公群担保🛡️经营有保障✅
-我们承诺会始终坚持安全可靠、高额度、低利息，让用户用得放心❤️
+  loan_info: `贷款须知✨\n本群业务为苹果手机ID贷款咨询业务\n\n\n1. 未成年可贷，不做多机，备用机的也别来，只限本人借款。没有偿还能力的不要来，救急不救穷。\n\n\n2. 12起做，iOS更新系统到17.5以上，面容坏了可做，电池不到10天可做，根据手机实际情况降额度（如低配、更换零件）额度表仅供参考，实际额度以客服审核估价为准。\n\n\n3. 贷款找业务员提交资料，确定要借款则进入会议核对环节，配合审核员审核，如拒不配合或者辱骂本群审核员，则有权锁机一个礼拜、抹除数据作为惩罚并赔偿误工费。审核过程中审核人员已经上好ID，你由于自身原因停止借款或者验证非本人操作的按浪费人力物力财力缴纳误工费否则锁机协商处理。\n\n\n4. 恶意骗贷（含在别的公群借钱不还）、代操作、官解机、隐藏机、多个人操作、虚假身份信息、非本人操作、双设备、技术操作；恶意隐瞒没有提前告知，出现以上情况，一旦发现，有权锁机并抹除数据视情况恶劣程度罚500-1000。\n\n\n5. 到期不归还贷款，逾期将会被清除手机数据，设置丢失模式，手机锁死，被泄露个人资料，被催收骚扰等，我方概不负责！\n\n\n6. 贷款周期7天（含当天），到期无力偿还可选择续期（周续/天续）。逾期天息为总欠款×10%，例：总还款350÷7=50元/天，及时缴清否则有权锁机处理。\n\n\n💳 下款方式：USDT / 微信 / 支付宝\n🏦 唯一还款地址：\n<code>TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw</code>\n（微信/支付宝需我方确认后进款才算）\n\n\n⚠️ 苹果ID借款注意事项：\n1. 登陆ID后禁止乱试密码/密保或拿去做其他业务！\n2. 借款途中导致ID停用，公群不承担责任，可协助提供解除教程。\n3. ID停用属于百分之一风控，按教程绝大部分可解除。\n\n\n🛡 担保公群：https://t.me/+j6LNmLkLlvg1YTA1\n📢 下款群组：https://t.me/liuLiuid`,
 
-📋资料简单：登录ID即可（不影响正常使用）
-⚡审核快：最快5分钟到账💨
-🎁提前还款利息减半！
-👑老客户享提额度＋降息福利💎
+  agree_prompt: `📋 请确认您已阅读并同意以上贷款须知。\n\n\n点击下方按钮开始申请 👇`,
 
-同时为了回馈新老用户的信任🙏
-我们特意推出了🤖自助能量机器人，只需2.5 TRX即可进行一次USDT转账💱
-帮您大大节省转账手续费💰！
+  duplicate_apply: `⚠️ 您已提交过申请，请耐心等待专员联系。\n如有疑问请联系在线客服：https://t.me/liuliuidid_bot`,
 
-💵支持下款方式：
-USDT 🪙 微信💚 支付宝🧧
+  repay_info: `💰 还款说明\n\n\n贷款周期7天（含当天），到期无力偿还可选择续期。\n\n\n📌 逾期规则：\n• 天息 = 总欠款金额 × 10%\n• 例：总还款350元 ÷ 7 = 50元/天\n• 到期必须还款，逾期有权锁机处理\n\n\n请选择您的操作：`,
 
-🚫安全无套路，拒绝高息陷阱！
-💰高额度 · 💫低利息 · 🔒安全可靠`,
+  promote: `🎉 六六ID贷 优惠活动\n\n\n━━━━━━━━━━━━━━\n⚡️ 活动一：24小时极速还款\n借款后24小时内完成还款，即享🔥利息减半！\n\n\n━━━━━━━━━━━━━━\n🎁 活动二：推荐奖励计划\n\n\n👥 推荐 3 位 → 3个月TG会员（6.8 USDT / 58 RMB）\n👥 推荐 5 位 → 6个月TG会员（12.8 USDT / 88 RMB）\n👥 推荐 10 位 → 12个月TG会员（18.8 USDT / 139 RMB）\n\n\n可选择会员或折现\n━━━━━━━━━━━━━━\n🛡 由红星公共群担保支持\n🔗 红星群：https://t.me/+j6LNmLkLlvg1YTA1\n📢 官方频道：https://t.me/liuLiuid`,
 
-  loan_info: `贷款须知✨
-本群业务为苹果手机ID贷款咨询业务
-
-
-1. 未成年可贷，不做多机，备用机的也别来，只限本人借款。没有偿还能力的不要来，救急不救穷。
-
-
-2. 12起做，iOS更新系统到17.5以上，面容坏了可做，电池不到10天可做，根据手机实际情况降额度（如低配、更换零件）额度表仅供参考，实际额度以客服审核估价为准。
-
-
-3. 贷款找业务员提交资料，确定要借款则进入会议核对环节，配合审核员审核，如拒不配合或者辱骂本群审核员，则有权锁机一个礼拜、抹除数据作为惩罚并赔偿误工费。审核过程中审核人员已经上好ID，你由于自身原因停止借款或者验证非本人操作的按浪费人力物力财力缴纳误工费否则锁机协商处理。
-
-
-4. 恶意骗贷（含在别的公群借钱不还）、代操作、官解机、隐藏机、多个人操作、虚假身份信息、非本人操作、双设备、技术操作；恶意隐瞒没有提前告知，出现以上情况，一旦发现，有权锁机并抹除数据视情况恶劣程度罚500-1000。
-
-
-5. 到期不归还贷款，逾期将会被清除手机数据，设置丢失模式，手机锁死，被泄露个人资料，被催收骚扰等，我方概不负责！
-
-
-6. 贷款周期7天（含当天），到期无力偿还可选择续期（周续/天续）。逾期天息为总欠款×10%，例：总还款350÷7=50元/天，及时缴清否则有权锁机处理。
-
-
-💳 下款方式：USDT / 微信 / 支付宝
-🏦 唯一还款地址：
-<code>TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw</code>
-（微信/支付宝需我方确认后进款才算）
-
-
-⚠️ 苹果ID借款注意事项：
-1. 登陆ID后禁止乱试密码/密保或拿去做其他业务！
-2. 借款途中导致ID停用，公群不承担责任，可协助提供解除教程。
-3. ID停用属于百分之一风控，按教程绝大部分可解除。
-
-
-🛡 担保公群：https://t.me/+j6LNmLkLlvg1YTA1
-📢 下款群组：https://t.me/liuLiuid`,
-
-  agree_prompt: `📋 请确认您已阅读并同意以上贷款须知。
-
-
-点击下方按钮开始申请 👇`,
-
-  duplicate_apply: `⚠️ 您已提交过申请，请耐心等待专员联系。
-如有疑问请联系在线客服：https://t.me/liuliuidid_bot`,
-
-  repay_info: `💰 还款说明
-
-
-贷款周期7天（含当天），到期无力偿还可选择续期。
-
-
-📌 逾期规则：
-• 天息 = 总欠款金额 × 10%
-• 例：总还款350元 ÷ 7 = 50元/天
-• 到期必须还款，逾期有权锁机处理
-
-
-请选择您的操作：`,
-
-  promote: `🎉 六六ID贷 优惠活动
-
-
-━━━━━━━━━━━━━━
-⚡️ 活动一：24小时极速还款
-借款后24小时内完成还款，即享🔥利息减半！
-
-
-━━━━━━━━━━━━━━
-🎁 活动二：推荐奖励计划
-
-
-👥 推荐 3 位 → 3个月TG会员（6.8 USDT / 58 RMB）
-👥 推荐 5 位 → 6个月TG会员（12.8 USDT / 88 RMB）
-👥 推荐 10 位 → 12个月TG会员（18.8 USDT / 139 RMB）
-
-
-可选择会员或折现
-━━━━━━━━━━━━━━
-🛡 由红星公共群担保支持
-🔗 红星群：https://t.me/+j6LNmLkLlvg1YTA1
-📢 官方频道：https://t.me/liuLiuid`,
-
-  energy: `⚡️ TRX能量 / TG会员代购
-
-
-🚀  TRX能量 & Telegram 会员特惠中心
-为您提供最稳定、最划算的链上与通讯服务！
-
-⚡ 波场 (TRON) 能量一键购买 —— 您的转账省钱小帮手！
-还在为昂贵的 USDT 转账手续费发愁？只需一笔转账，即可抵扣手续费！
-
-秒到账，无需注册！
-
-价格极低： 仅需 2.5 TRX = 65,000 能量
-
-使用指南：
-
-普通转账： 向机器人地址转账 ≥ 2.5 TRX（如 2.5、5、7.5...），即可获得 65,000 能量，免费进行一次普通的 USDT 转账。
-
-特殊转账： 若对方地址无 U 或为交易所地址，能量需求翻倍。转账 ≥ 5 TRX → 获得 131,000 能量，轻松省下高额手续费！
-
-✅ 无需复杂操作，一转即用
-✅品质保障，稳定、安全、高效
-
-✈️ Telegram Premium 会员特惠
-享受更快的下载速度、专属标识及更多高级功能：
-
-3 个月 —— 15 USDT
-
-6 个月 —— 20 USDT
-
-12 个月 —— 35 USDT (🔥 最划算选择！)
-
-💡 立即下单，尊享极致效率！
-点击下方按钮前往购买 👇`,
+  energy: `⚡️ TRX能量 / TG会员代购\n\n\n🚀  TRX能量 & Telegram 会员特惠中心\n为您提供最稳定、最划算的链上与通讯服务！\n\n⚡ 波场 (TRON) 能量一键购买 —— 您的转账省钱小帮手！\n还在为昂贵的 USDT 转账手续费发愁？只需一笔转账，即可抵扣手续费！\n\n秒到账，无需注册！\n\n价格极低： 仅需 2.5 TRX = 65,000 能量\n\n使用指南：\n\n普通转账： 向机器人地址转账 ≥ 2.5 TRX（如 2.5、5、7.5...），即可获得 65,000 能量，免费进行一次普通的 USDT 转账。\n\n特殊转账： 若对方地址无 U 或为交易所地址，能量需求翻倍。转账 ≥ 5 TRX → 获得 131,000 能量，轻松省下高额手续费！\n\n✅ 无需复杂操作，一转即用\n✅品质保障，稳定、安全、高效\n\n✈️ Telegram Premium 会员特惠\n享受更快的下载速度、专属标识及更多高级功能：\n\n3 个月 —— 15 USDT\n\n6 个月 —— 20 USDT\n\n12 个月 —— 35 USDT (🔥 最划算选择！)\n\n💡 立即下单，尊享极致效率！\n点击下方按钮前往购买 👇`,
 };
 
 let TEXT = { ...DEFAULT_TEXT };
@@ -310,9 +186,9 @@ async function getUserInfo(chatId, env) {
 // ================================================================
 // 双向对话：映射管理员消息ID → 用户ID
 // ================================================================
-// relay_map_{adminMsgId} = userId  (保存48小时)
+// relay_map_{adminMsgId} = userId  (永久不过期，彻底解决48小时限制)
 async function saveRelayMap(adminMsgId, userId, env) {
-  await env.BOT_KV.put(`relay_map_${adminMsgId}`, String(userId), { expirationTtl: 172800 });
+  await env.BOT_KV.put(`relay_map_${adminMsgId}`, String(userId));
 }
 async function getRelayMap(adminMsgId, env) {
   return env.BOT_KV.get(`relay_map_${adminMsgId}`);
@@ -413,29 +289,29 @@ async function forwardRepay(chatId, data) {
 
 // ================================================================
 // 双向对话：转发用户消息给管理员（带用户标识头）
+// 申请流程中的每一步输入也实时转发，让管理员随时掌握进度
 // ================================================================
-async function relayUserMsgToAdmins(msg, env) {
+async function relayUserMsgToAdmins(msg, env, stepLabel = null) {
   const userId = msg.from.id;
   const userInfo = await getUserInfo(userId, env);
   const nameStr = userInfo
     ? `${[userInfo.first_name, userInfo.last_name].filter(Boolean).join(" ")}${userInfo.username ? " (@" + userInfo.username + ")" : ""}`
     : "";
 
+  // stepLabel 说明当前是哪个流程步骤
+  const stepTag = stepLabel ? `\n📍 流程步骤：${stepLabel}` : "";
+
   const header =
     `💬 用户消息\n` +
-    `👤 ID：<code>${userId}</code>${nameStr ? "  " + nameStr : ""}\n` +
+    `👤 ID：<code>${userId}</code>${nameStr ? "  " + nameStr : ""}${stepTag}\n` +
     `─────────────────`;
 
   for (const adminId of CONFIG.ADMIN_IDS) {
-    // 先发标识头，获取头部消息ID
-    const headerMsg = await sendMsg(adminId, header);
-    // 转发原始消息（保留媒体/文字）
+    await sendMsg(adminId, header);
     const fwdResult = await forwardMessage(msg.chat.id, msg.message_id, adminId);
-    // 用转发后的消息ID做映射，管理员回复此消息即可回到用户
     if (fwdResult && fwdResult.result) {
       await saveRelayMap(fwdResult.result.message_id, userId, env);
     }
-    // 提示管理员如何回复
     await sendMsg(adminId,
       `↩️ 回复上方消息即可发送给用户 <code>${userId}</code>`,
     );
@@ -568,22 +444,19 @@ async function handleMessage(msg, env) {
       const repliedMsgId = msg.reply_to_message.message_id;
       const targetUserId = await getRelayMap(repliedMsgId, env);
       if (targetUserId) {
-        // 把管理员的回复内容（文字/图片/文件等）copy给用户
         await copyMessage(chatId, msg.message_id, targetUserId);
         return sendMsg(chatId, `✅ 已发送给用户 <code>${targetUserId}</code>`);
       }
     }
 
-    // 管理员主动发消息（非回复）→ 不转发，直接忽略或提示
     return;
   }
 
   // ── 用户逻辑 ─────────────────────────────────────────────────────
   const state = await getState(chatId, env);
 
-  // 没有进行中的流程时：实时转发用户消息给管理员（双向对话）
+  // 没有进行中的流程：实时转发给管理员
   if (!state) {
-    // /start 已处理，其他非命令消息都转发
     if (text !== "/start") {
       await relayUserMsgToAdmins(msg, env);
     }
@@ -592,8 +465,11 @@ async function handleMessage(msg, env) {
 
   const step = state.step;
 
+  // ── 申请流程 ──────────────────────────────────────────────────────
   if (step === "apply_model") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入手机型号");
+    // 实时转发给管理员，标注当前步骤
+    await relayUserMsgToAdmins(msg, env, "申请第1步 - 手机型号");
     await setState(chatId, { ...state, step: "apply_stage2", model: text.trim() }, env);
     return sendMsg(chatId,
       "📋 申请额度\n\n补充问题：\n\n这台手机是<b>全款</b>还是<b>分期</b>中的设备？",
@@ -620,7 +496,8 @@ async function handleMessage(msg, env) {
 
   if (step === "apply_region") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入所在地区");
-    // 申请完成，提交给管理员
+    // 实时转发给管理员，标注当前步骤
+    await relayUserMsgToAdmins(msg, env, "申请第2步 - 所在地区");
     const final = { ...state, region: text.trim(), applied: true, approved: false, time: getNow() };
     await clearState(chatId, env);
     await saveApply(chatId, final, env);
@@ -631,8 +508,11 @@ async function handleMessage(msg, env) {
     return sendMsg(chatId, `🎉 申请提交成功！\n\n资料已提交，专员将尽快与您联系。\n如有疑问请联系：${CONFIG.CUSTOMER_SERVICE}`);
   }
 
+  // ── 还款流程 ──────────────────────────────────────────────────────
   if (step === "repay_screenshot") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送还款截图（图片）");
+    // 实时转发还款截图给管理员
+    await relayUserMsgToAdmins(msg, env, "还款流程 - 上传截图");
     const fid = photo[photo.length - 1].file_id;
     await setState(chatId, { ...state, step: "repay_amount", shot: fid }, env);
     return sendMsg(chatId, "✅ 截图已收到\n\n请输入<b>还款金额</b>（支持：350 / 50U / 50 USDT / 350 RMB）：");
@@ -640,10 +520,14 @@ async function handleMessage(msg, env) {
   if (step === "repay_amount") {
     const val = text.trim();
     if (!val) return sendMsg(chatId, "⚠️ 请输入还款金额（如：350、50U、50 USDT、350 RMB）");
+    // 实时转发还款金额给管理员
+    await relayUserMsgToAdmins(msg, env, "还款流程 - 输入金额");
     await setState(chatId, { ...state, step: "repay_appleid", amount: val }, env);
     return sendMsg(chatId, `✅ 金额：${val}\n\n请输入您的 <b>Apple ID</b>（邮箱格式）：`);
   }
   if (step === "repay_appleid") {
+    // 实时转发Apple ID给管理员
+    await relayUserMsgToAdmins(msg, env, "还款流程 - Apple ID");
     const final = { ...state, appleid: text.trim() };
     await clearState(chatId, env);
     await forwardRepay(chatId, final);
@@ -652,8 +536,8 @@ async function handleMessage(msg, env) {
     );
   }
 
-  // 流程中收到非预期消息 → 也转发给管理员（保持双向）
-  await relayUserMsgToAdmins(msg, env);
+  // 流程中收到其他非预期消息 → 也转发给管理员
+  await relayUserMsgToAdmins(msg, env, `流程中-${step}`);
   return sendMainMenu(chatId);
 }
 
@@ -1287,8 +1171,8 @@ async function cmdLiuliu(chatId) {
 
     `${"─".repeat(20)}\n` +
     `💬 <b>双向对话</b>\n` +
-    `└ 用户消息自动转发到管理员\n` +
-    `  回复转发的消息即可回复给用户\n\n` +
+    `└ 用户消息（含申请流程每一步）自动转发到管理员\n` +
+    `  回复转发的消息即可回复给用户（永不过期）\n\n` +
 
     `${"─".repeat(20)}\n` +
     `🧹 <b>数据清理</b>\n` +
