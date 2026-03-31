@@ -1,5 +1,5 @@
 // ================================================================
-// 66ID 贷款机器人 — Cloudflare Workers 完整版 v11
+// 66ID 贷款机器人 — Cloudflare Workers 完整版 v12
 // ================================================================
 
 
@@ -49,7 +49,7 @@ const DEFAULT_TEXT = {
 👑老客户享提额度＋降息福利💎
 
 同时为了回馈新老用户的信任🙏
-我们特意推出了🤖自助能量机器人，只需2.5 TRX即可进行一次USDT转账💱
+我们特意推出了🤖自助能量机器人，只需2.5 TRX即可进行一次USDT转账💱
 帮您大大节省转账手续费💰！
 
 💵支持下款方式：
@@ -205,6 +205,18 @@ async function sendPhoto(chatId, fileId, caption = "", keyboard = null) {
   if (keyboard) body.reply_markup = keyboard;
   return tgPost("sendPhoto", body);
 }
+async function forwardMessage(fromChatId, msgId, toChatId) {
+  return tgPost("forwardMessage", {
+    chat_id: toChatId,
+    from_chat_id: fromChatId,
+    message_id: msgId,
+  });
+}
+async function copyMessage(fromChatId, msgId, toChatId, replyToMsgId = null) {
+  const body = { chat_id: toChatId, from_chat_id: fromChatId, message_id: msgId };
+  if (replyToMsgId) body.reply_to_message_id = replyToMsgId;
+  return tgPost("copyMessage", body);
+}
 async function sendDocument(chatId, filename, csvContent, caption = "") {
   const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
   const encoder  = new TextEncoder();
@@ -296,6 +308,17 @@ async function getUserInfo(chatId, env) {
 }
 
 // ================================================================
+// 双向对话：映射管理员消息ID → 用户ID
+// ================================================================
+// relay_map_{adminMsgId} = userId  (保存48小时)
+async function saveRelayMap(adminMsgId, userId, env) {
+  await env.BOT_KV.put(`relay_map_${adminMsgId}`, String(userId), { expirationTtl: 172800 });
+}
+async function getRelayMap(adminMsgId, env) {
+  return env.BOT_KV.get(`relay_map_${adminMsgId}`);
+}
+
+// ================================================================
 // 工具函数
 // ================================================================
 function getNow() {
@@ -372,9 +395,6 @@ async function forwardApply(chatId, data, userId) {
     `例：<code>/ok ${userId} 300 R 50 7</code>`;
   for (const target of CONFIG.FORWARD_TARGETS) {
     await sendMsg(target, caption);
-    for (const key of ["shot1", "shot2", "shot3", "shot4"]) {
-      if (data[key]) await sendPhoto(target, data[key]);
-    }
   }
 }
 
@@ -388,6 +408,37 @@ async function forwardRepay(chatId, data) {
   for (const target of CONFIG.FORWARD_TARGETS) {
     await sendMsg(target, caption);
     if (data.shot) await sendPhoto(target, data.shot, `还款截图 - 用户 ${chatId}`);
+  }
+}
+
+// ================================================================
+// 双向对话：转发用户消息给管理员（带用户标识头）
+// ================================================================
+async function relayUserMsgToAdmins(msg, env) {
+  const userId = msg.from.id;
+  const userInfo = await getUserInfo(userId, env);
+  const nameStr = userInfo
+    ? `${[userInfo.first_name, userInfo.last_name].filter(Boolean).join(" ")}${userInfo.username ? " (@" + userInfo.username + ")" : ""}`
+    : "";
+
+  const header =
+    `💬 用户消息\n` +
+    `👤 ID：<code>${userId}</code>${nameStr ? "  " + nameStr : ""}\n` +
+    `─────────────────`;
+
+  for (const adminId of CONFIG.ADMIN_IDS) {
+    // 先发标识头，获取头部消息ID
+    const headerMsg = await sendMsg(adminId, header);
+    // 转发原始消息（保留媒体/文字）
+    const fwdResult = await forwardMessage(msg.chat.id, msg.message_id, adminId);
+    // 用转发后的消息ID做映射，管理员回复此消息即可回到用户
+    if (fwdResult && fwdResult.result) {
+      await saveRelayMap(fwdResult.result.message_id, userId, env);
+    }
+    // 提示管理员如何回复
+    await sendMsg(adminId,
+      `↩️ 回复上方消息即可发送给用户 <code>${userId}</code>`,
+    );
   }
 }
 
@@ -494,6 +545,7 @@ async function handleMessage(msg, env) {
     return sendMainMenu(chatId);
   }
 
+  // ── 管理员逻辑 ──────────────────────────────────────────────────
   if (isAdmin(userId)) {
     if (text === "/cid" || text.startsWith("/cid ")) return cmdCid(chatId, text, env);
     if (text === "/cyq")                              return cmdStats(chatId, env);
@@ -510,10 +562,34 @@ async function handleMessage(msg, env) {
     if (text === "/getconfig")                        return cmdGetConfig(chatId, env);
     if (text === "/liuliu")                           return cmdLiuliu(chatId);
     if (text === "/ql000000")                         return cmdClearAll(chatId, env);
+
+    // 管理员回复转发的消息 → 双向回复给用户
+    if (msg.reply_to_message) {
+      const repliedMsgId = msg.reply_to_message.message_id;
+      const targetUserId = await getRelayMap(repliedMsgId, env);
+      if (targetUserId) {
+        // 把管理员的回复内容（文字/图片/文件等）copy给用户
+        await copyMessage(chatId, msg.message_id, targetUserId);
+        return sendMsg(chatId, `✅ 已发送给用户 <code>${targetUserId}</code>`);
+      }
+    }
+
+    // 管理员主动发消息（非回复）→ 不转发，直接忽略或提示
+    return;
   }
 
+  // ── 用户逻辑 ─────────────────────────────────────────────────────
   const state = await getState(chatId, env);
-  if (!state) return sendMainMenu(chatId);
+
+  // 没有进行中的流程时：实时转发用户消息给管理员（双向对话）
+  if (!state) {
+    // /start 已处理，其他非命令消息都转发
+    if (text !== "/start") {
+      await relayUserMsgToAdmins(msg, env);
+    }
+    return sendMainMenu(chatId);
+  }
+
   const step = state.step;
 
   if (step === "apply_model") {
@@ -544,31 +620,8 @@ async function handleMessage(msg, env) {
 
   if (step === "apply_region") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入所在地区");
-    await setState(chatId, { ...state, step: "apply_shot1", region: text.trim() }, env);
-    return sendMsg(chatId, `✅ 地区已记录\n\n第 3 步（截图 1/4）\n\n请上传手机<b>设置主页</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href="https://t.me/liuliuidi">@liuliuidi</a>，您的贷款专员）`);
-  }
-  if (step === "apply_shot1") {
-    if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
-    const fid = photo[photo.length - 1].file_id;
-    await setState(chatId, { ...state, step: "apply_shot2", shot1: fid }, env);
-    return sendMsg(chatId, "✅ 已收到（1/4）\n\n第 4 步（截图 2/4）\n\n请上传<b>关于本机</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidi\">@liuliuidi</a>，您的贷款专员）");
-  }
-  if (step === "apply_shot2") {
-    if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
-    const fid = photo[photo.length - 1].file_id;
-    await setState(chatId, { ...state, step: "apply_shot3", shot2: fid }, env);
-    return sendMsg(chatId, "✅ 已收到（2/4）\n\n第 5 步（截图 3/4）\n\n请上传<b>蜂窝网络</b>底部截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidi\">@liuliuidi</a>，您的贷款专员）");
-  }
-  if (step === "apply_shot3") {
-    if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
-    const fid = photo[photo.length - 1].file_id;
-    await setState(chatId, { ...state, step: "apply_shot4", shot3: fid }, env);
-    return sendMsg(chatId, "✅ 已收到（3/4）\n\n第 6 步（截图 4/4）\n\n请上传<b>电池用量过去10天</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidi\">@liuliuidi</a>，您的贷款专员）");
-  }
-  if (step === "apply_shot4") {
-    if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
-    const fid   = photo[photo.length - 1].file_id;
-    const final = { ...state, shot4: fid, applied: true, approved: false, time: getNow() };
+    // 申请完成，提交给管理员
+    const final = { ...state, region: text.trim(), applied: true, approved: false, time: getNow() };
     await clearState(chatId, env);
     await saveApply(chatId, final, env);
     const s = await getStats(env);
@@ -599,6 +652,8 @@ async function handleMessage(msg, env) {
     );
   }
 
+  // 流程中收到非预期消息 → 也转发给管理员（保持双向）
+  await relayUserMsgToAdmins(msg, env);
   return sendMainMenu(chatId);
 }
 
@@ -1229,6 +1284,11 @@ async function cmdLiuliu(chatId) {
     `${"─".repeat(20)}\n` +
     `📢 <b>群发</b>\n` +
     `└ /broadcast 内容\n\n` +
+
+    `${"─".repeat(20)}\n` +
+    `💬 <b>双向对话</b>\n` +
+    `└ 用户消息自动转发到管理员\n` +
+    `  回复转发的消息即可回复给用户\n\n` +
 
     `${"─".repeat(20)}\n` +
     `🧹 <b>数据清理</b>\n` +
