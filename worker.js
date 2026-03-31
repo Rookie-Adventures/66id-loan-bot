@@ -526,25 +526,25 @@ async function handleMessage(msg, env) {
   if (step === "apply_region") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入所在地区");
     await setState(chatId, { ...state, step: "apply_shot1", region: text.trim() }, env);
-    return sendMsg(chatId, `✅ 地区已记录\n\n第 3 步（截图 1/4）\n\n请上传手机<b>设置主页</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href="https://t.me/liuliuidid_bot">@liuliuidid_bot</a>，您的贷款专员）`);
+    return sendMsg(chatId, `✅ 地区已记录\n\n第 3 步（截图 1/4）\n\n请上传手机<b>设置主页</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href="https://t.me/liuliuidi">@liuliuidi</a>，您的贷款专员）`);
   }
   if (step === "apply_shot1") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
     const fid = photo[photo.length - 1].file_id;
     await setState(chatId, { ...state, step: "apply_shot2", shot1: fid }, env);
-    return sendMsg(chatId, "✅ 已收到（1/4）\n\n第 4 步（截图 2/4）\n\n请上传<b>关于本机</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidid_bot\">@liuliuidid_bot</a>，您的贷款专员）");
+    return sendMsg(chatId, "✅ 已收到（1/4）\n\n第 4 步（截图 2/4）\n\n请上传<b>关于本机</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidi\">@liuliuidi</a>，您的贷款专员）");
   }
   if (step === "apply_shot2") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
     const fid = photo[photo.length - 1].file_id;
     await setState(chatId, { ...state, step: "apply_shot3", shot2: fid }, env);
-    return sendMsg(chatId, "✅ 已收到（2/4）\n\n第 5 步（截图 3/4）\n\n请上传<b>蜂窝网络</b>底部截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidid_bot\">@liuliuidid_bot</a>，您的贷款专员）");
+    return sendMsg(chatId, "✅ 已收到（2/4）\n\n第 5 步（截图 3/4）\n\n请上传<b>蜂窝网络</b>底部截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidi\">@liuliuidi</a>，您的贷款专员）");
   }
   if (step === "apply_shot3") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
     const fid = photo[photo.length - 1].file_id;
     await setState(chatId, { ...state, step: "apply_shot4", shot3: fid }, env);
-    return sendMsg(chatId, "✅ 已收到（3/4）\n\n第 6 步（截图 4/4）\n\n请上传<b>电池用量过去10天</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidid_bot\">@liuliuidid_bot</a>，您的贷款专员）");
+    return sendMsg(chatId, "✅ 已收到（3/4）\n\n第 6 步（截图 4/4）\n\n请上传<b>电池用量过去10天</b>截图：\n\n（如果您在此步感到困惑，请直接联系<a href=\"https://t.me/liuliuidi\">@liuliuidi</a>，您的贷款专员）");
   }
   if (step === "apply_shot4") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送截图（图片）");
