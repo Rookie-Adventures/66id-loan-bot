@@ -1,7 +1,7 @@
-name = "bot"
+name = "muddy-darkness-3ebc"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "BOT_KV"
-id = "c45454ec448640abbbb5c8eac5c9db35"
+id = "cadb2bc7e7e9435a96cda7ed8319a353"
