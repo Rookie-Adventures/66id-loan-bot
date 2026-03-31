@@ -5,3 +5,12 @@ compatibility_date = "2024-01-01"
 [[kv_namespaces]]
 binding = "BOT_KV"
 id = "cadb2bc7e7e9435a96cda7ed8319a353"
+
+# 定时任务配置
+# 每天 GMT+7 早上 9:00 发送（UTC 02:00）
+# 每天 GMT+7 晚上 8:00 发送（UTC 13:00）
+[[triggers.crons]]
+cron = "0 2 * * *"
+
+[[triggers.crons]]
+cron = "0 13 * * *"
