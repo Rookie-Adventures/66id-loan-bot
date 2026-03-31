@@ -3,18 +3,17 @@
 // ================================================================
 
 const DEFAULT = {
-  BOT_TOKEN:        "",
-  FORWARD_TARGETS:  [],
-  ADMIN_IDS:        [],
+  BOT_TOKEN:        "8604621639:AAEMH_W5NDU1Z2pVIvtl3fiXIIjqrO2-3U0",
+  FORWARD_TARGETS:  ["8333517664", "7866700520"],
+  ADMIN_IDS:        ["8333517664", "7866700520"],
   CUSTOMER_SERVICE: "https://t.me/liuliuidid_bot",
   CHANNEL_LINK:     "https://t.me/liuLiuid",
   ENERGY_BOT:       "https://t.me/trx20gasbot",
-  PAYMENT_ADDRESS:  "",
+  PAYMENT_ADDRESS:  "TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw",
   QR_FILE_ID:       "",
   QR_FILE_ID_2:     "",
   LOAN_DAYS:        7,
 };
-
 
 let CONFIG = { ...DEFAULT };
 
