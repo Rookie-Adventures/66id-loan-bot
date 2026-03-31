@@ -1,5 +1,5 @@
 // ================================================================
-// 66ID 贷款机器人 — Cloudflare Workers 完整版 v13
+// 66ID 贷款机器人 — Cloudflare Workers 完整版 v14
 // ================================================================
 
 
@@ -168,7 +168,6 @@ async function getAllUsers(env) {
   return raw ? JSON.parse(raw) : [];
 }
 
-// 保存用户信息（名字/用户名），每次发消息时更新
 async function saveUserInfo(chatId, from, env) {
   const info = {
     first_name: from.first_name || "",
@@ -184,9 +183,43 @@ async function getUserInfo(chatId, env) {
 }
 
 // ================================================================
+// 通用关键词搜索用户ID（支持ID片段/姓名/用户名/型号/地区）
+// ================================================================
+async function findUserId(env, keyword) {
+  keyword = String(keyword || "").toLowerCase();
+  const rawLoan  = await env.BOT_KV.get("loan_users");
+  const loanUsers = rawLoan ? JSON.parse(rawLoan) : [];
+  const allUsers  = await getAllUsers(env);
+  const allIds    = [...new Set([...loanUsers, ...allUsers])];
+
+  for (const uid of allIds) {
+    const apply = await getApply(uid, env);
+    const user  = await getUserInfo(uid, env);
+    const model  = (apply?.model      || "").toLowerCase();
+    const region = (apply?.region     || "").toLowerCase();
+    const first  = (user?.first_name  || "").toLowerCase();
+    const last   = (user?.last_name   || "").toLowerCase();
+    const userN  = (user?.username    || "").toLowerCase();
+    const full   = [first, last].filter(Boolean).join(" ");
+
+    if (
+      String(uid).includes(keyword) ||
+      model.includes(keyword)  ||
+      region.includes(keyword) ||
+      first.includes(keyword)  ||
+      last.includes(keyword)   ||
+      userN.includes(keyword)  ||
+      full.includes(keyword)
+    ) {
+      return String(uid);
+    }
+  }
+  return null;
+}
+
+// ================================================================
 // 双向对话：映射管理员消息ID → 用户ID
 // ================================================================
-// relay_map_{adminMsgId} = userId  (永久不过期，彻底解决48小时限制)
 async function saveRelayMap(adminMsgId, userId, env) {
   await env.BOT_KV.put(`relay_map_${adminMsgId}`, String(userId));
 }
@@ -288,8 +321,7 @@ async function forwardRepay(chatId, data) {
 }
 
 // ================================================================
-// 双向对话：转发用户消息给管理员（带用户标识头）
-// 申请流程中的每一步输入也实时转发，让管理员随时掌握进度
+// 双向对话：转发用户消息给管理员
 // ================================================================
 async function relayUserMsgToAdmins(msg, env, stepLabel = null) {
   const userId = msg.from.id;
@@ -298,7 +330,6 @@ async function relayUserMsgToAdmins(msg, env, stepLabel = null) {
     ? `${[userInfo.first_name, userInfo.last_name].filter(Boolean).join(" ")}${userInfo.username ? " (@" + userInfo.username + ")" : ""}`
     : "";
 
-  // stepLabel 说明当前是哪个流程步骤
   const stepTag = stepLabel ? `\n📍 流程步骤：${stepLabel}` : "";
 
   const header =
@@ -428,13 +459,13 @@ async function handleMessage(msg, env) {
     if (text.startsWith("/ok"))                       return cmdApprove(chatId, text, env);
     if (text.startsWith("/xq"))                       return cmdRenew(chatId, text, env);
     if (text.startsWith("/nb"))                       return cmdRepaid(chatId, text, env);
-    if (text.startsWith("/pause"))                    return cmdPause(chatId, text, env);
-    if (text.startsWith("/getuser"))                  return cmdGetUser(chatId, text, env);
+    if (text.startsWith("/zt"))                       return cmdPause(chatId, text, env);
+    if (text.startsWith("/cx"))                       return cmdGetUser(chatId, text, env);
     if (text === "/loanlist")                         return cmdLoanList(chatId, env);
     if (text === "/export")                           return cmdExport(chatId, env);
     if (text.startsWith("/setconfig "))               return cmdSetConfig(chatId, text.slice(10), env);
     if (text.startsWith("/settext "))                 return cmdSetText(chatId, text.slice(9), env);
-    if (text.startsWith("/broadcast "))               return cmdBroadcast(chatId, text.slice(11), env);
+    if (text.startsWith("/bb "))                      return cmdBroadcast(chatId, text.slice(4), env);
     if (text === "/getconfig")                        return cmdGetConfig(chatId, env);
     if (text === "/liuliu")                           return cmdLiuliu(chatId);
     if (text === "/ql000000")                         return cmdClearAll(chatId, env);
@@ -455,7 +486,6 @@ async function handleMessage(msg, env) {
   // ── 用户逻辑 ─────────────────────────────────────────────────────
   const state = await getState(chatId, env);
 
-  // 没有进行中的流程：实时转发给管理员
   if (!state) {
     if (text !== "/start") {
       await relayUserMsgToAdmins(msg, env);
@@ -468,7 +498,6 @@ async function handleMessage(msg, env) {
   // ── 申请流程 ──────────────────────────────────────────────────────
   if (step === "apply_model") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入手机型号");
-    // 实时转发给管理员，标注当前步骤
     await relayUserMsgToAdmins(msg, env, "申请第1步 - 手机型号");
     await setState(chatId, { ...state, step: "apply_stage2", model: text.trim() }, env);
     return sendMsg(chatId,
@@ -496,7 +525,6 @@ async function handleMessage(msg, env) {
 
   if (step === "apply_region") {
     if (!text.trim()) return sendMsg(chatId, "⚠️ 请输入所在地区");
-    // 实时转发给管理员，标注当前步骤
     await relayUserMsgToAdmins(msg, env, "申请第2步 - 所在地区");
     const final = { ...state, region: text.trim(), applied: true, approved: false, time: getNow() };
     await clearState(chatId, env);
@@ -511,7 +539,6 @@ async function handleMessage(msg, env) {
   // ── 还款流程 ──────────────────────────────────────────────────────
   if (step === "repay_screenshot") {
     if (!photo) return sendMsg(chatId, "⚠️ 请发送还款截图（图片）");
-    // 实时转发还款截图给管理员
     await relayUserMsgToAdmins(msg, env, "还款流程 - 上传截图");
     const fid = photo[photo.length - 1].file_id;
     await setState(chatId, { ...state, step: "repay_amount", shot: fid }, env);
@@ -520,13 +547,11 @@ async function handleMessage(msg, env) {
   if (step === "repay_amount") {
     const val = text.trim();
     if (!val) return sendMsg(chatId, "⚠️ 请输入还款金额（如：350、50U、50 USDT、350 RMB）");
-    // 实时转发还款金额给管理员
     await relayUserMsgToAdmins(msg, env, "还款流程 - 输入金额");
     await setState(chatId, { ...state, step: "repay_appleid", amount: val }, env);
     return sendMsg(chatId, `✅ 金额：${val}\n\n请输入您的 <b>Apple ID</b>（邮箱格式）：`);
   }
   if (step === "repay_appleid") {
-    // 实时转发Apple ID给管理员
     await relayUserMsgToAdmins(msg, env, "还款流程 - Apple ID");
     const final = { ...state, appleid: text.trim() };
     await clearState(chatId, env);
@@ -536,7 +561,6 @@ async function handleMessage(msg, env) {
     );
   }
 
-  // 流程中收到其他非预期消息 → 也转发给管理员
   await relayUserMsgToAdmins(msg, env, `流程中-${step}`);
   return sendMainMenu(chatId);
 }
@@ -595,22 +619,25 @@ async function cmdApprove(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 6) {
     return sendMsg(chatId,
-      "❌ 格式：/ok 用户ID 本金 单位 利息 天数\n\n" +
-      "单位：R 或 RMB = 人民币，U 或 USDT = USDT\n\n" +
-      "示例：\n" +
-      "<code>/ok 123456789 300 R 50 7</code>  → 人民币 本金300 利息50 7天 应还350\n" +
-      "<code>/ok 123456789 300 U 50 7</code>  → USDT 本金300 利息50 7天 应还350"
+      "❌ 格式：/ok 用户 本金 单位 利息 天数\n\n" +
+      "单位：R 人民币  U USDT\n" +
+      "用户可输入ID或名字\n\n" +
+      "例：/ok 123456789 300 R 50 7\n" +
+      "例：/ok 张三 300 R 50 7"
     );
   }
 
-  const targetId = parts[1];
+  const keyword  = parts[1].toLowerCase();
+  const targetId = await findUserId(env, keyword);
+  if (!targetId) return sendMsg(chatId, `❌ 未找到用户：${keyword}`);
+
   const amount   = parseFloat(parts[2]);
   const unit     = parseUnit(parts[3]);
   const interest = parseFloat(parts[4]);
   const loanDays = parseInt(parts[5]);
 
-  if (isNaN(amount) || amount <= 0)  return sendMsg(chatId, "❌ 本金格式错误，请输入正数");
-  if (!unit)                          return sendMsg(chatId, "❌ 单位格式错误，请输入 R（人民币）或 U（USDT）");
+  if (isNaN(amount) || amount <= 0)    return sendMsg(chatId, "❌ 本金格式错误，请输入正数");
+  if (!unit)                            return sendMsg(chatId, "❌ 单位格式错误，请输入 R（人民币）或 U（USDT）");
   if (isNaN(interest) || interest < 0) return sendMsg(chatId, "❌ 利息格式错误，请输入非负数");
   if (isNaN(loanDays) || loanDays <= 0) return sendMsg(chatId, "❌ 天数格式错误，请输入正整数");
 
@@ -672,17 +699,18 @@ async function cmdRenew(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 5) {
     return sendMsg(chatId,
-      "❌ 格式：/xq 用户ID 已还利息 续期天数 下期利息\n\n" +
-      "计算逻辑：\n" +
-      "• 新应还 = (上期应还 - 已还利息) + 下期利息\n\n" +
-      "示例：\n" +
-      "<code>/xq 123456789 50 7 30</code>\n" +
-      "→ 上期应还350，已还50，续7天，下期利息30\n" +
-      "→ 新应还 = (350-50)+30 = 330"
+      "❌ 格式：/xq 用户 已还利息 续期天数 下期利息\n\n" +
+      "新应还 = (上期应还 - 已还利息) + 下期利息\n\n" +
+      "例：/xq 123456789 50 7 30\n" +
+      "例：/xq 张三 50 7 30\n" +
+      "→ 上期350，已还50，续7天，下期息30 → 新应还330"
     );
   }
 
-  const targetId      = parts[1];
+  const keyword      = parts[1].toLowerCase();
+  const targetId     = await findUserId(env, keyword);
+  if (!targetId) return sendMsg(chatId, `❌ 未找到用户：${keyword}`);
+
   const paidInterest  = parseFloat(parts[2]);
   const days          = parseInt(parts[3]);
   const nextInterest  = parseFloat(parts[4]);
@@ -743,10 +771,14 @@ async function cmdRenew(chatId, text, env) {
 
 
 async function cmdRepaid(chatId, text, env) {
-  const parts    = text.trim().split(/\s+/);
-  if (parts.length < 2) return sendMsg(chatId, "❌ 格式：/nb 用户ID\n例：/nb 123456789");
-  const targetId = parts[1];
-  const loan     = await getLoan(targetId, env);
+  const parts = text.trim().split(/\s+/);
+  if (parts.length < 2) return sendMsg(chatId, "❌ 格式：/nb 用户\n例：/nb 123456789 或 /nb 张三");
+
+  const keyword  = parts[1].toLowerCase();
+  const targetId = await findUserId(env, keyword);
+  if (!targetId) return sendMsg(chatId, `❌ 未找到用户：${keyword}`);
+
+  const loan = await getLoan(targetId, env);
   if (!loan) return sendMsg(chatId, `❌ 找不到用户 ${targetId} 的贷款记录`);
 
   const unit      = loan.unit || "RMB";
@@ -767,14 +799,17 @@ async function cmdRepaid(chatId, text, env) {
 async function cmdPause(chatId, text, env) {
   const parts = text.trim().split(/\s+/);
   if (parts.length < 3) return sendMsg(chatId,
-    "❌ 格式：/pause 用户ID 天数\n" +
-    "例：/pause 123456789 2\n" +
-    "效果：暂停该用户催款通知2天\n\n" +
-    "取消暂停：/pause 用户ID 0"
+    "❌ 格式：/zt 用户 天数\n" +
+    "例：/zt 123456789 2 → 暂停催款2天\n" +
+    "取消暂停：/zt 用户 0"
   );
-  const targetId = parts[1];
-  const days     = parseInt(parts[2]);
-  const loan     = await getLoan(targetId, env);
+
+  const keyword  = parts[1].toLowerCase();
+  const targetId = await findUserId(env, keyword);
+  if (!targetId) return sendMsg(chatId, `❌ 未找到用户：${keyword}`);
+
+  const days = parseInt(parts[2]);
+  const loan = await getLoan(targetId, env);
   if (!loan) return sendMsg(chatId, `❌ 找不到用户 ${targetId} 的贷款记录`);
 
   if (days <= 0) {
@@ -788,15 +823,19 @@ async function cmdPause(chatId, text, env) {
     `⏸ 已暂停用户 ${targetId} 的催款通知\n\n` +
     `📅 暂停至：<b>${pauseUntil}</b>（共 ${days} 天）\n` +
     `恢复后将自动继续催款\n\n` +
-    `提前取消：/pause ${targetId} 0`
+    `提前取消：/zt ${targetId} 0`
   );
 }
 
 
 async function cmdGetUser(chatId, text, env) {
-  const parts    = text.trim().split(/\s+/);
-  if (parts.length < 2) return sendMsg(chatId, "❌ 格式：/getuser 用户ID\n例：/getuser 123456789");
-  const targetId = parts[1];
+  const parts = text.trim().split(/\s+/);
+  if (parts.length < 2) return sendMsg(chatId, "❌ 格式：/cx 用户\n例：/cx 123456789 或 /cx 张三");
+
+  const keyword  = parts[1].toLowerCase();
+  const targetId = await findUserId(env, keyword);
+  if (!targetId) return sendMsg(chatId, `❌ 未找到用户：${keyword}`);
+
   const apply    = await getApply(targetId, env);
   const loan     = await getLoan(targetId, env);
   const userinfo = await getUserInfo(targetId, env);
@@ -906,7 +945,7 @@ async function cmdLoanList(chatId, env) {
       groups.overdue.push(
         base +
         `🚨 逾期 ${diff} 天  逾期费：${unitLabel}${fee}  当前应还：${unitLabel}${total}\n` +
-        `👉 /nb ${uid}  |  /xq ${uid} 已还息 续期天 下期息  |  /pause ${uid} 天数`
+        `👉 /nb ${uid}  |  /xq ${uid} 已还息 续期天 下期息  |  /zt ${uid} 天数`
       );
     } else {
       if (unit === "RMB")  unpaidRMB  += parseFloat(loan.repay_amount);
@@ -915,7 +954,7 @@ async function cmdLoanList(chatId, env) {
       groups.active.push(
         base +
         `⏳ ${left}\n` +
-        `👉 /nb ${uid}  |  /xq ${uid} 已还息 续期天 下期息  |  /pause ${uid} 天数`
+        `👉 /nb ${uid}  |  /xq ${uid} 已还息 续期天 下期息  |  /zt ${uid} 天数`
       );
     }
   }
@@ -1080,13 +1119,13 @@ async function cmdGetConfig(chatId, env) {
 
 
 async function cmdBroadcast(chatId, content, env) {
-  if (!content.trim()) return sendMsg(chatId, "❌ 用法：/broadcast 内容");
+  if (!content.trim()) return sendMsg(chatId, "❌ 用法：/bb 内容");
   const users = await getAllUsers(env);
   let sent = 0;
   for (const uid of users) {
     try { await sendMsg(uid, content); sent++; } catch {}
   }
-  return sendMsg(chatId, `✅ 广播完成，成功发送 ${sent} / ${users.length} 人`);
+  return sendMsg(chatId, `✅ 群发完成，成功发送 ${sent} / ${users.length} 人`);
 }
 
 
@@ -1114,71 +1153,49 @@ async function cmdClearAll(chatId, env) {
 
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
-    `👮 管理员指令手册\n${"═".repeat(20)}\n\n` +
+    `👮 管理员指令\n${"─".repeat(22)}\n\n` +
 
-    `📋 <b>贷款审批</b>\n` +
-    `┌ /ok 用户ID 本金 单位 利息 天数\n` +
-    `│ 单位：R=人民币  U=USDT\n` +
-    `│ 应还 = 本金 + 利息\n` +
-    `│ 例1：/ok 123456789 300 R 50 7\n` +
-    `│      → 人民币 借300 利息50 7天 应还350\n` +
-    `│ 例2：/ok 123456789 300 U 50 7\n` +
-    `│      → USDT 借300 利息50 7天 应还350\n\n` +
+    `📋 <b>审批</b>\n` +
+    `/ok 用户 本金 单位 利息 天数\n` +
+    `→ 审核通过，单位 R=人民币 U=USDT\n` +
+    `→ 例：/ok 张三 300 R 50 7\n\n` +
 
-    `├ /xq 用户ID 已还利息 续期天数 下期利息\n` +
-    `│ 新应还 = (上期应还 - 已还利息) + 下期利息\n` +
-    `│ 例：/xq 123456789 50 7 30\n` +
-    `│      → 上期350，已还50，续7天，下期息30\n` +
-    `│      → 新应还 = (350-50)+30 = 330\n\n` +
+    `/xq 用户 已还利息 续期天数 下期利息\n` +
+    `→ 续期，新应还=(上期-已还)+下期息\n` +
+    `→ 例：/xq 张三 50 7 30\n\n` +
 
-    `├ /nb 用户ID\n` +
-    `│ 确认还款完成，发送结清通知给用户\n` +
-    `│ 例：/nb 123456789\n\n` +
+    `/nb 用户\n` +
+    `→ 标记已还清\n` +
+    `→ 例：/nb 张三\n\n` +
 
-    `└ /pause 用户ID 天数\n` +
-    `  暂停该用户的催款通知N天\n` +
-    `  取消暂停：/pause 用户ID 0\n` +
-    `  例：/pause 123456789 2\n\n` +
+    `/zt 用户 天数\n` +
+    `→ 暂停催款N天（0=取消）\n` +
+    `→ 例：/zt 张三 2\n\n` +
 
-    `${"─".repeat(20)}\n` +
-    `🔍 <b>查询 & 导出</b>\n` +
-    `┌ /getuser 用户ID   查看申请+贷款+姓名详情\n` +
-    `├ /loanlist         所有用户总览（含逾期金额统计）\n` +
-    `├ /export           导出全部明细为 CSV 文件\n` +
-    `└ /cyq              数据统计（含逾期应收金额）\n\n` +
+    `${"─".repeat(22)}\n` +
+    `🔍 <b>查询</b>\n` +
+    `/cx 用户  → 查详情（申请+贷款）\n` +
+    `/cid 关键词  → 按名字/型号/地区搜用户ID\n` +
+    `/loanlist  → 全部用户总览\n` +
+    `/export  → 导出 CSV\n` +
+    `/cyq  → 统计数据\n\n` +
 
-    `${"─".repeat(20)}\n` +
-    `🪪 <b>查询用户ID</b>\n` +
-    `┌ /cid              查看自己的管理员ID\n` +
-    `└ /cid 关键词       按ID片段/姓名/用户名/型号/地区搜索\n` +
-    `  例：/cid 张三  /cid liuliu  /cid iPhone14\n\n` +
-
-    `${"─".repeat(20)}\n` +
-    `⚙️ <b>动态配置</b>\n` +
-    `┌ /setconfig {"字段":"值"}\n` +
-    `│ PAYMENT_ADDRESS / CUSTOMER_SERVICE / CHANNEL_LINK\n` +
-    `│ LOAN_DAYS / DAILY_RATE / ADMIN_IDS / FORWARD_TARGETS\n` +
-    `└ /getconfig  查看当前配置\n\n` +
-
-    `${"─".repeat(20)}\n` +
-    `✏️ <b>动态文案</b>\n` +
-    `┌ /settext {"字段":"新内容"}\n` +
-    `└ 字段：welcome / loan_info / repay_info / promote / energy\n\n` +
-
-    `${"─".repeat(20)}\n` +
+    `${"─".repeat(22)}\n` +
     `📢 <b>群发</b>\n` +
-    `└ /broadcast 内容\n\n` +
+    `/bb 内容  → 群发给所有用户\n\n` +
 
-    `${"─".repeat(20)}\n` +
+    `${"─".repeat(22)}\n` +
+    `⚙️ <b>配置</b>\n` +
+    `/setconfig {"字段":"值"}  → 改配置\n` +
+    `/getconfig  → 查当前配置\n` +
+    `/settext {"字段":"内容"}  → 改文案\n\n` +
+
+    `${"─".repeat(22)}\n` +
     `💬 <b>双向对话</b>\n` +
-    `└ 用户消息（含申请流程每一步）自动转发到管理员\n` +
-    `  回复转发的消息即可回复给用户（永不过期）\n\n` +
+    `用户消息自动转发，回复该消息即可回复用户\n\n` +
 
-    `${"─".repeat(20)}\n` +
-    `🧹 <b>数据清理</b>\n` +
-    `└ /ql000000  清除全部用户数据（⚠️不可逆）\n\n` +
-
-    `/liuliu — 查看此帮助`
+    `/ql000000  ⚠️ 清空所有数据\n` +
+    `/liuliu  查看此帮助`
   );
 }
 
