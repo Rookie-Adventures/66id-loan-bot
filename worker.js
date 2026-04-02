@@ -1,4 +1,4 @@
-// ================================================================
+﻿// ================================================================
 // 66ID 贷款机器人 - Cloudflare Workers v16
 // ================================================================
 
@@ -13,6 +13,13 @@ const DEFAULT = {
   QR_FILE_ID:       "",
   QR_FILE_ID_2:     "",
   LOAN_DAYS:        7,
+  // 广播目标：频道和群组的 ID 或 @username
+  BROADCAST_CHANNELS: ["@liuLiuid"],  // 频道列表，格式：@频道用户名 或 -100频道ID
+  BROADCAST_GROUPS:   [],              // 群组列表，格式：@群组用户名 或 -群组ID
+  // 定时广告配置
+  AUTO_ADS_ENABLED: false,             // 是否启用自动广告
+  AUTO_ADS_TIMES:   ["09:00", "14:00", "20:00"],  // 发送时间（GMT+7）
+  AUTO_ADS_CONTENT: "🎉 六六ID贷 - 您的资金周转好帮手\n\n💰 高额度 · 💫低利息 · 🔒安全可靠\n\n立即申请：@liuliuidid_bot",
 };
 
 let CONFIG = { ...DEFAULT };
@@ -27,8 +34,11 @@ async function loadConfig(env) {
     if (raw) {
       const kv = JSON.parse(raw);
       CONFIG = { ...DEFAULT, ...kv };
-      if (kv.FORWARD_TARGETS) CONFIG.FORWARD_TARGETS = kv.FORWARD_TARGETS;
-      if (kv.ADMIN_IDS)       CONFIG.ADMIN_IDS       = kv.ADMIN_IDS;
+      if (kv.FORWARD_TARGETS)     CONFIG.FORWARD_TARGETS     = kv.FORWARD_TARGETS;
+      if (kv.ADMIN_IDS)           CONFIG.ADMIN_IDS           = kv.ADMIN_IDS;
+      if (kv.BROADCAST_CHANNELS)  CONFIG.BROADCAST_CHANNELS  = kv.BROADCAST_CHANNELS;
+      if (kv.BROADCAST_GROUPS)    CONFIG.BROADCAST_GROUPS    = kv.BROADCAST_GROUPS;
+      if (kv.AUTO_ADS_TIMES)      CONFIG.AUTO_ADS_TIMES      = kv.AUTO_ADS_TIMES;
     }
   } catch {}
   // CF Secrets 优先级最高，覆盖 KV 和硬编码默认值
@@ -449,6 +459,72 @@ async function handleCallback(cb, env) {
       inline_keyboard: [[{ text: "⚡️ 前往购买", url: CONFIG.ENERGY_BOT }]],
     });
   }
+
+  // ── 引导式群发回调 ──────────────────────────────────────────────
+  if (data === "broadcast_users") {
+    await setState(chatId, { step: "broadcast_content", scope: "users", excluded: [] }, env);
+    const userCount = (await getAllUsers(env)).length;
+    return sendMsg(chatId,
+      `✅ 已选择：📱 私信用户 (${userCount}人)\n\n` +
+      `请发送要群发的内容：\n（支持文字、图片、图文混合）`,
+      { inline_keyboard: [[{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] }
+    );
+  }
+
+  if (data === "broadcast_channels") {
+    await setState(chatId, { step: "broadcast_exclude", scope: "channels" }, env);
+    return showChannelGroupList(chatId, "channels", env);
+  }
+
+  if (data === "broadcast_all") {
+    await setState(chatId, { step: "broadcast_exclude", scope: "all" }, env);
+    return showChannelGroupList(chatId, "all", env);
+  }
+
+  if (data === "broadcast_send_now") {
+    const state = await getState(chatId, env);
+    if (!state || !state.content) return sendMsg(chatId, "❌ 会话已过期，请重新开始");
+    await clearState(chatId, env);
+    return executeBroadcast(chatId, state, env);
+  }
+
+  if (data === "broadcast_schedule") {
+    const state = await getState(chatId, env);
+    if (!state || !state.content) return sendMsg(chatId, "❌ 会话已过期，请重新开始");
+    await setState(chatId, { ...state, step: "broadcast_times" }, env);
+    const now = new Date(Date.now() + 7 * 3600000);
+    const currentTime = now.toISOString().substring(11, 16);
+    return sendMsg(chatId,
+      `⏰ 定时发送\n\n` +
+      `请输入今天要发送的时间：\n（多个时间用空格分隔）\n\n` +
+      `格式：HH:MM\n` +
+      `示例：18:00 20:00 22:00\n\n` +
+      `⏰ 当前时间：${currentTime} (GMT+7)`,
+      { inline_keyboard: [[{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] }
+    );
+  }
+
+  if (data === "broadcast_schedule_confirm") {
+    const state = await getState(chatId, env);
+    if (!state || !state.times) return sendMsg(chatId, "❌ 会话已过期，请重新开始");
+    await clearState(chatId, env);
+    return createScheduledTask(chatId, state, env);
+  }
+
+  if (data === "broadcast_cancel") {
+    await clearState(chatId, env);
+    return sendMsg(chatId, "❌ 已取消群发操作");
+  }
+
+  if (data.startsWith("scheduled_delete_")) {
+    const taskId = data.replace("scheduled_delete_", "");
+    return deleteScheduledTask(chatId, taskId, env);
+  }
+
+  if (data === "scheduled_add") {
+    await setState(chatId, { step: "broadcast_range", type: "scheduled" }, env);
+    return showBroadcastRangeMenu(chatId, env);
+  }
 }
 
 // ================================================================
@@ -490,7 +566,6 @@ async function handleMessage(msg, env) {
   if (isAdmin(userId)) {
     if (text === "/cid" || text.startsWith("/cid ")) return cmdCid(chatId, text, env);
     if (text === "/cyq")                              return cmdStats(chatId, env);
-    if (text === "/debug")                            return cmdDebug(chatId, env);
     if (text.startsWith("/ok"))                       return cmdApprove(chatId, text, env);
     if (text.startsWith("/xq"))                       return cmdRenew(chatId, text, env);
     if (text.startsWith("/nb"))                       return cmdRepaid(chatId, text, env);
@@ -498,10 +573,10 @@ async function handleMessage(msg, env) {
     if (text.startsWith("/cx"))                       return cmdGetUser(chatId, text, env);
     if (text === "/loanlist")                         return cmdLoanList(chatId, env);
     if (text === "/export")                           return cmdExport(chatId, env);
-    if (text.startsWith("/setconfig "))               return cmdSetConfig(chatId, text.slice(11), env);
-    if (text.startsWith("/settext "))                 return cmdSetText(chatId, text.slice(9), env);
-    if (text.startsWith("/bb "))                      return cmdBroadcast(chatId, text.slice(4), env);
+    if (text === "/bb")                               return cmdBroadcastGuided(chatId, env);
+    if (text === "/定时")                             return cmdScheduledTasks(chatId, env);
     if (text === "/getconfig")                        return cmdGetConfig(chatId, env);
+    if (text === "/getads")                           return cmdGetAds(chatId, env);
     if (text === "/liuliu")                           return cmdLiuliu(chatId);
     if (text === "/ql000000")                         return cmdClearAll(chatId, env);
 
@@ -527,6 +602,46 @@ async function handleMessage(msg, env) {
 
   const step = state.step;
 
+  // ── 引导式群发流程 ──────────────────────────────────────────────
+  if (step === "broadcast_exclude") {
+    const input = text.trim();
+    if (!input || input === "0") {
+      // 不排除，全部发送
+      await setState(chatId, { ...state, step: "broadcast_content", excluded: [] }, env);
+      return showBroadcastContentPrompt(chatId, state, env);
+    }
+    // 解析排除列表
+    const excluded = parseExcludeList(input, state.scope);
+    await setState(chatId, { ...state, step: "broadcast_content", excluded }, env);
+    return showBroadcastContentPrompt(chatId, { ...state, excluded }, env);
+  }
+
+  if (step === "broadcast_content") {
+    // 收集内容
+    const content = { type: "text", text: "", photo_id: "", caption: "" };
+    if (photo) {
+      content.type = "photo";
+      content.photo_id = photo[photo.length - 1].file_id;
+      content.caption = text || "";
+    } else if (text) {
+      content.text = text;
+    } else {
+      return sendMsg(chatId, "⚠️ 请发送文字或图片内容");
+    }
+    await setState(chatId, { ...state, step: "broadcast_confirm", content }, env);
+    return showBroadcastConfirm(chatId, { ...state, content }, env);
+  }
+
+  if (step === "broadcast_times") {
+    const times = parseTimeInput(text.trim());
+    if (times.length === 0) {
+      return sendMsg(chatId, "❌ 时间格式错误\n\n请输入正确格式：HH:MM\n示例：18:00 20:00");
+    }
+    await setState(chatId, { ...state, step: "broadcast_schedule_confirm", times }, env);
+    return showScheduleConfirm(chatId, { ...state, times }, env);
+  }
+
+  // ── 申请流程 ──────────────────────────────────────────────────
   if (step === "apply_model") {
     if (!text.trim()) {
       if (photo || msg.document || msg.video) {
@@ -1146,38 +1261,6 @@ async function cmdStats(chatId, env) {
 }
 
 
-async function cmdSetConfig(chatId, json, env) {
-  try {
-    const update = JSON.parse(json);
-    const raw    = await env.BOT_KV.get("config");
-    const old    = raw ? JSON.parse(raw) : {};
-    const merged = { ...old, ...update };
-    await env.BOT_KV.put("config", JSON.stringify(merged));
-    CONFIG = { ...DEFAULT, ...merged };
-    if (merged.FORWARD_TARGETS) CONFIG.FORWARD_TARGETS = merged.FORWARD_TARGETS;
-    if (merged.ADMIN_IDS)       CONFIG.ADMIN_IDS       = merged.ADMIN_IDS;
-    return sendMsg(chatId, `✅ 配置已更新，立即生效\n\n更新字段：${Object.keys(update).join(", ")}`);
-  } catch (e) {
-    return sendMsg(chatId, `❌ JSON格式错误：${e.message}`);
-  }
-}
-
-
-async function cmdSetText(chatId, json, env) {
-  try {
-    const update = JSON.parse(json);
-    const raw    = await env.BOT_KV.get("text");
-    const old    = raw ? JSON.parse(raw) : {};
-    const merged = { ...old, ...update };
-    await env.BOT_KV.put("text", JSON.stringify(merged));
-    TEXT = { ...DEFAULT_TEXT, ...merged };
-    return sendMsg(chatId, `✅ 文案已更新，立即生效\n\n更新字段：${Object.keys(update).join(", ")}`);
-  } catch (e) {
-    return sendMsg(chatId, `❌ JSON格式错误：${e.message}`);
-  }
-}
-
-
 async function cmdGetConfig(chatId, env) {
   const raw = await env.BOT_KV.get("config");
   const cfg = raw ? JSON.parse(raw) : {};
@@ -1186,19 +1269,23 @@ async function cmdGetConfig(chatId, env) {
   );
 }
 
-
-async function cmdBroadcast(chatId, content, env) {
-  if (!content.trim()) return sendMsg(chatId, "❌ 用法：/bb 内容");
-  const users = await getAllUsers(env);
-  let sent = 0, failed = 0;
-  for (const uid of users) {
-    try {
-      const res = await sendMsg(uid, content);
-      if (res && res.ok) sent++;
-      else failed++;
-    } catch { failed++; }
-  }
-  return sendMsg(chatId, `✅ 群发完成，成功 ${sent} / ${users.length}${failed > 0 ? `，失败 ${failed} 人` : ""}`);
+async function cmdGetAds(chatId, env) {
+  const adsConfig = {
+    AUTO_ADS_ENABLED:   CONFIG.AUTO_ADS_ENABLED,
+    AUTO_ADS_TIMES:     CONFIG.AUTO_ADS_TIMES,
+    AUTO_ADS_CONTENT:   CONFIG.AUTO_ADS_CONTENT,
+    BROADCAST_CHANNELS: CONFIG.BROADCAST_CHANNELS,
+    BROADCAST_GROUPS:   CONFIG.BROADCAST_GROUPS,
+  };
+  
+  return sendMsg(chatId,
+    `📢 定时广告配置\n\n` +
+    `状态：${CONFIG.AUTO_ADS_ENABLED ? "✅ 已启用" : "❌ 已禁用"}\n` +
+    `发送时间：${(CONFIG.AUTO_ADS_TIMES || []).join(", ")}\n` +
+    `频道数量：${(CONFIG.BROADCAST_CHANNELS || []).length}\n` +
+    `群组数量：${(CONFIG.BROADCAST_GROUPS || []).length}\n\n` +
+    `<b>完整配置：</b>\n<code>${JSON.stringify(adsConfig, null, 2)}</code>`
+  );
 }
 
 
@@ -1219,103 +1306,601 @@ async function cmdClearAll(chatId, env) {
   await env.BOT_KV.delete("stats");
   await env.BOT_KV.delete("config");
   await env.BOT_KV.delete("text");
+  await env.BOT_KV.delete("scheduled_tasks");
   CONFIG = { ...DEFAULT };
   TEXT   = { ...DEFAULT_TEXT };
 
   return sendMsg(chatId,
-    `🧹 清理完成\n\n已删除 ${allIds.length} 个用户的所有数据\n含：状态、申请记录、贷款记录、用户信息、统计数据、配置、文案\n\n⚠️ 此操作不可逆`
+    `🧹 清理完成\n\n已删除 ${allIds.length} 个用户的所有数据\n含：状态、申请记录、贷款记录、用户信息、统计数据、配置、文案、定时任务\n\n⚠️ 此操作不可逆`
   );
 }
 
+// ================================================================
+// 引导式群发功能
+// ================================================================
 
+async function cmdBroadcastGuided(chatId, env) {
+  await setState(chatId, { step: "broadcast_range", type: "temp" }, env);
+  return showBroadcastRangeMenu(chatId, env);
+}
 
+async function showBroadcastRangeMenu(chatId, env) {
+  const userCount = (await getAllUsers(env)).length;
+  return sendMsg(chatId,
+    `📢 群发消息\n\n请选择发送范围：`,
+    {
+      inline_keyboard: [
+        [{ text: `📱 私信用户 (${userCount}人)`, callback_data: "broadcast_users" }],
+        [{ text: "📢 频道和群组", callback_data: "broadcast_channels" }],
+        [{ text: "🌐 全部发送", callback_data: "broadcast_all" }],
+      ],
+    }
+  );
+}
 
-async function cmdDebug(chatId, env) {
-  const msg = 
-    `🔧 配置调试信息\n${"─".repeat(22)}\n\n` +
-    `客服链接：${CONFIG.CUSTOMER_SERVICE}\n` +
-    `频道链接：${CONFIG.CHANNEL_LINK}\n` +
-    `能量机器人：${CONFIG.ENERGY_BOT}\n` +
-    `收款地址：${CONFIG.PAYMENT_ADDRESS}\n\n` +
-    `测试按钮（点击看是否能跳转）：`;
+async function showChannelGroupList(chatId, scope, env) {
+  const channels = CONFIG.BROADCAST_CHANNELS || [];
+  const groups = CONFIG.BROADCAST_GROUPS || [];
   
-  await sendMsg(chatId, msg, {
+  let list = `✅ 已选择：${scope === "all" ? "🌐 全部发送" : "📢 频道和群组"}\n\n`;
+  
+  if (scope === "all") {
+    list += `当前发送目标：\n\n`;
+  } else {
+    list += `当前频道和群组列表：\n\n`;
+  }
+  
+  let index = 1;
+  const mapping = [];
+  
+  if (channels.length > 0) {
+    list += `📢 频道：\n`;
+    for (const ch of channels) {
+      list += `${index}. ✅ ${ch}\n`;
+      mapping.push({ index, type: "channel", id: ch });
+      index++;
+    }
+    list += `\n`;
+  }
+  
+  if (groups.length > 0) {
+    list += `👥 群组：\n`;
+    for (const gr of groups) {
+      list += `${index}. ✅ ${gr}\n`;
+      mapping.push({ index, type: "group", id: gr });
+      index++;
+    }
+    list += `\n`;
+  }
+  
+  if (scope === "all") {
+    const userCount = (await getAllUsers(env)).length;
+    list += `📱 私信用户：\n${index}. ✅ 所有私信用户 (${userCount}人)\n\n`;
+    mapping.push({ index, type: "users", id: "all_users" });
+  }
+  
+  if (channels.length === 0 && groups.length === 0) {
+    return sendMsg(chatId, `❌ 未配置频道和群组\n\n请联系技术人员在代码中配置 BROADCAST_CHANNELS 和 BROADCAST_GROUPS`);
+  }
+  
+  await env.BOT_KV.put(`broadcast_mapping_${chatId}`, JSON.stringify(mapping), { expirationTtl: 3600 });
+  
+  list += `💡 排除部分：输入编号或名字\n`;
+  list += `   示例：1 3 或 ${channels[0] || groups[0]}\n`;
+  if (scope === "all") {
+    list += `   注：私信用户不可单独排除\n`;
+  }
+  list += `   输入 0 = 全部发送`;
+  
+  return sendMsg(chatId, list, {
+    inline_keyboard: [[{ text: "❌ 取消", callback_data: "broadcast_cancel" }]],
+  });
+}
+
+function parseExcludeList(input, scope) {
+  const parts = input.split(/[\s,，]+/).filter(Boolean);
+  const excluded = [];
+  
+  for (const part of parts) {
+    if (/^\d+$/.test(part)) {
+      excluded.push(parseInt(part));
+    } else {
+      excluded.push(part);
+    }
+  }
+  
+  return excluded;
+}
+
+async function showBroadcastContentPrompt(chatId, state, env) {
+  const mapping = await env.BOT_KV.get(`broadcast_mapping_${chatId}`);
+  const map = mapping ? JSON.parse(mapping) : [];
+  
+  const channels = CONFIG.BROADCAST_CHANNELS || [];
+  const groups = CONFIG.BROADCAST_GROUPS || [];
+  const excluded = state.excluded || [];
+  
+  let selectedChannels = [];
+  let selectedGroups = [];
+  let includeUsers = false;
+  
+  if (state.scope === "users") {
+    includeUsers = true;
+  } else if (state.scope === "channels") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+  } else if (state.scope === "all") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+    includeUsers = !excluded.includes(channels.length + groups.length + 1) && !excluded.includes("all_users");
+  }
+  
+  let summary = `✅ 发送范围已确定\n\n📊 将发送到：\n`;
+  if (selectedChannels.length > 0) summary += `📢 频道：${selectedChannels.join(", ")}\n`;
+  if (selectedGroups.length > 0) summary += `👥 群组：${selectedGroups.join(", ")}\n`;
+  if (includeUsers) {
+    const userCount = (await getAllUsers(env)).length;
+    summary += `📱 私信：${userCount}人\n`;
+  }
+  summary += `\n━━━━━━━━━━━━━━\n\n`;
+  summary += `请发送要群发的内容：\n（支持文字、图片、图文混合）`;
+  
+  return sendMsg(chatId, summary, {
+    inline_keyboard: [[{ text: "❌ 取消", callback_data: "broadcast_cancel" }]],
+  });
+}
+
+async function showBroadcastConfirm(chatId, state, env) {
+  const channels = CONFIG.BROADCAST_CHANNELS || [];
+  const groups = CONFIG.BROADCAST_GROUPS || [];
+  const excluded = state.excluded || [];
+  
+  let selectedChannels = [];
+  let selectedGroups = [];
+  let includeUsers = false;
+  
+  if (state.scope === "users") {
+    includeUsers = true;
+  } else if (state.scope === "channels") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+  } else if (state.scope === "all") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+    includeUsers = !excluded.includes(channels.length + groups.length + 1);
+  }
+  
+  let preview = `📝 内容已收到\n\n`;
+  preview += `📊 发送范围：\n`;
+  if (selectedChannels.length > 0) preview += `📢 频道：${selectedChannels.length}个\n`;
+  if (selectedGroups.length > 0) preview += `👥 群组：${selectedGroups.length}个\n`;
+  if (includeUsers) {
+    const userCount = (await getAllUsers(env)).length;
+    preview += `📱 私信：${userCount}人\n`;
+  }
+  preview += `\n请选择发送方式：`;
+  
+  const keyboard = state.type === "scheduled"
+    ? { inline_keyboard: [[{ text: "⏰ 设置发送时间", callback_data: "broadcast_schedule" }], [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] }
+    : { inline_keyboard: [[{ text: "📤 立即发送", callback_data: "broadcast_send_now" }, { text: "⏰ 定时发送", callback_data: "broadcast_schedule" }], [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] };
+  
+  return sendMsg(chatId, preview, keyboard);
+}
+
+async function executeBroadcast(chatId, state, env) {
+  const channels = CONFIG.BROADCAST_CHANNELS || [];
+  const groups = CONFIG.BROADCAST_GROUPS || [];
+  const excluded = state.excluded || [];
+  
+  let selectedChannels = [];
+  let selectedGroups = [];
+  let includeUsers = false;
+  
+  if (state.scope === "users") {
+    includeUsers = true;
+  } else if (state.scope === "channels") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+  } else if (state.scope === "all") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+    includeUsers = true;
+  }
+  
+  let channelSent = 0, channelFailed = 0;
+  let groupSent = 0, groupFailed = 0;
+  let userSent = 0, userFailed = 0;
+  
+  const content = state.content;
+  
+  // 发送到频道
+  for (const channel of selectedChannels) {
+    try {
+      const res = content.type === "photo"
+        ? await sendPhoto(channel, content.photo_id, content.caption)
+        : await sendMsg(channel, content.text);
+      if (res && res.ok) channelSent++;
+      else channelFailed++;
+    } catch { channelFailed++; }
+  }
+  
+  // 发送到群组
+  for (const group of selectedGroups) {
+    try {
+      const res = content.type === "photo"
+        ? await sendPhoto(group, content.photo_id, content.caption)
+        : await sendMsg(group, content.text);
+      if (res && res.ok) groupSent++;
+      else groupFailed++;
+    } catch { groupFailed++; }
+  }
+  
+  // 发送给私信用户
+  if (includeUsers) {
+    const users = await getAllUsers(env);
+    for (const uid of users) {
+      try {
+        const res = content.type === "photo"
+          ? await sendPhoto(uid, content.photo_id, content.caption)
+          : await sendMsg(uid, content.text);
+        if (res && res.ok) userSent++;
+        else userFailed++;
+      } catch { userFailed++; }
+    }
+  }
+  
+  // 统计通知：只有私信或全部范围才显示
+  const showStats = state.scope === "users" || state.scope === "all";
+  
+  if (showStats) {
+    let statsMsg = `✅ 发送完成！\n\n📊 发送统计：\n`;
+    if (selectedChannels.length > 0) statsMsg += `📢 频道：${channelSent} 成功${channelFailed > 0 ? `, ${channelFailed} 失败` : ""}\n`;
+    if (selectedGroups.length > 0) statsMsg += `👥 群组：${groupSent} 成功${groupFailed > 0 ? `, ${groupFailed} 失败` : ""}\n`;
+    if (includeUsers) {
+      const totalUsers = (await getAllUsers(env)).length;
+      statsMsg += `📱 私信：${userSent} 成功${userFailed > 0 ? `, ${userFailed} 失败` : ""}\n`;
+    }
+    statsMsg += `\n⏱️ 发送时间：${getNow()}`;
+    if (userFailed > 0) statsMsg += `\n⚠️ 失败原因：用户已屏蔽机器人`;
+    return sendMsg(chatId, statsMsg);
+  } else {
+    return sendMsg(chatId, `✅ 发送完成！\n\n📢 频道：${channelSent}/${selectedChannels.length}\n👥 群组：${groupSent}/${selectedGroups.length}`);
+  }
+}
+
+function parseTimeInput(input) {
+  const parts = input.split(/[\s,，]+/).filter(Boolean);
+  const times = [];
+  const timeRegex = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+  
+  for (const part of parts) {
+    if (timeRegex.test(part)) {
+      times.push(part);
+    }
+  }
+  
+  return times;
+}
+
+async function showScheduleConfirm(chatId, state, env) {
+  const channels = CONFIG.BROADCAST_CHANNELS || [];
+  const groups = CONFIG.BROADCAST_GROUPS || [];
+  const excluded = state.excluded || [];
+  
+  let selectedChannels = [];
+  let selectedGroups = [];
+  let includeUsers = false;
+  
+  if (state.scope === "users") {
+    includeUsers = true;
+  } else if (state.scope === "channels") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+  } else if (state.scope === "all") {
+    selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+    selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+    includeUsers = true;
+  }
+  
+  let msg = `⏰ 定时任务确认\n\n`;
+  msg += `📊 发送范围：\n`;
+  if (selectedChannels.length > 0) msg += `📢 频道：${selectedChannels.length}个\n`;
+  if (selectedGroups.length > 0) msg += `👥 群组：${selectedGroups.length}个\n`;
+  if (includeUsers) {
+    const userCount = (await getAllUsers(env)).length;
+    msg += `📱 私信：${userCount}人\n`;
+  }
+  msg += `\n⏰ 发送时间：\n`;
+  for (const time of state.times) {
+    msg += `• 今天 ${time}\n`;
+  }
+  
+  return sendMsg(chatId, msg, {
     inline_keyboard: [
-      [{ text: "👤 测试客服", url: CONFIG.CUSTOMER_SERVICE }],
-      [{ text: "📢 测试频道", url: CONFIG.CHANNEL_LINK }],
-      [{ text: "⚡️ 测试能量", url: CONFIG.ENERGY_BOT }],
+      [{ text: "✅ 确认创建", callback_data: "broadcast_schedule_confirm" }],
+      [{ text: "❌ 取消", callback_data: "broadcast_cancel" }],
     ],
   });
+}
+
+async function createScheduledTask(chatId, state, env) {
+  const raw = await env.BOT_KV.get("scheduled_tasks");
+  const tasks = raw ? JSON.parse(raw) : [];
   
-  return sendMsg(chatId, 
-    `如果上面的按钮点击没反应，可能原因：\n\n` +
-    `1. Bot 用户名不存在或拼写错误\n` +
-    `2. 频道/群组链接无效\n` +
-    `3. 需要先启动对应的 bot\n\n` +
-    `当前配置的客服 bot：liuliuidid_bot\n` +
-    `请确认这个 bot 是否存在且可访问`
+  const taskId = `task_${Date.now()}`;
+  const task = {
+    id: taskId,
+    created_at: getNow(),
+    scope: state.scope,
+    excluded: state.excluded || [],
+    content: state.content,
+    times: state.times,
+    date: getToday(),
+    status: "pending",
+  };
+  
+  tasks.push(task);
+  await env.BOT_KV.put("scheduled_tasks", JSON.stringify(tasks));
+  
+  return sendMsg(chatId,
+    `✅ 定时任务已创建！\n\n` +
+    `任务ID：${taskId.substring(5, 13)}\n` +
+    `⏰ 今天 ${state.times.join(", ")}\n\n` +
+    `💡 管理任务：/定时`
   );
+}
+
+async function cmdScheduledTasks(chatId, env) {
+  const raw = await env.BOT_KV.get("scheduled_tasks");
+  const tasks = raw ? JSON.parse(raw) : [];
+  
+  if (tasks.length === 0) {
+    return sendMsg(chatId,
+      `⏰ 定时任务列表\n\n暂无定时任务`,
+      { inline_keyboard: [[{ text: "➕ 新增任务", callback_data: "scheduled_add" }]] }
+    );
+  }
+  
+  let msg = `⏰ 定时任务列表\n\n`;
+  const keyboard = [];
+  
+  for (const task of tasks) {
+    const statusLabel = task.status === "pending" ? "[待发送]" : task.status === "completed" ? "[已完成]" : "[已取消]";
+    const shortId = task.id.substring(5, 13);
+    
+    msg += `━━━━━━━━━━━━━━\n`;
+    msg += `📋 任务 #${shortId} ${statusLabel}\n`;
+    msg += `⏰ ${task.times.join(", ")}\n`;
+    
+    const scopeLabel = task.scope === "users" ? "私信" : task.scope === "channels" ? "频道和群组" : "全部";
+    msg += `📊 ${scopeLabel}\n`;
+    
+    const preview = task.content.type === "photo" 
+      ? (task.content.caption || "[图片]")
+      : task.content.text;
+    msg += `📝 ${preview.substring(0, 30)}${preview.length > 30 ? "..." : ""}\n`;
+    
+    if (task.status === "completed" && task.stats) {
+      msg += `✅ 统计：`;
+      if (task.stats.channels) msg += `频道${task.stats.channels} `;
+      if (task.stats.groups) msg += `群组${task.stats.groups} `;
+      if (task.stats.users) msg += `私信${task.stats.users}`;
+      msg += `\n`;
+    }
+    
+    keyboard.push([{ text: `🗑️ 删除 #${shortId}`, callback_data: `scheduled_delete_${task.id}` }]);
+  }
+  
+  msg += `\n━━━━━━━━━━━━━━`;
+  
+  keyboard.push([{ text: "➕ 新增任务", callback_data: "scheduled_add" }]);
+  keyboard.push([{ text: "🔄 刷新列表", callback_data: "scheduled_refresh" }]);
+  
+  return sendMsg(chatId, msg, { inline_keyboard: keyboard });
+}
+
+async function deleteScheduledTask(chatId, taskId, env) {
+  const raw = await env.BOT_KV.get("scheduled_tasks");
+  const tasks = raw ? JSON.parse(raw) : [];
+  
+  const filtered = tasks.filter(t => t.id !== taskId);
+  await env.BOT_KV.put("scheduled_tasks", JSON.stringify(filtered));
+  
+  await sendMsg(chatId, `✅ 任务已删除`);
+  return cmdScheduledTasks(chatId, env);
 }
 
 
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
-    `👮 管理员指令\n${"─".repeat(22)}\n\n` +
+    `<b>👮 管理员指令手册</b>\n\n` +
 
-    `📋 <b>审批</b>\n` +
-    `/ok 用户 本金 单位 利息 天数\n` +
-    `→ 审核通过，单位 R=人民币 U=USDT\n` +
-    `→ 例：/ok 张三 300 R 50 7\n\n` +
+    `<b>📋 审批管理</b>\n` +
+    `<code>/ok 用户 本金 单位 利息 天数</code>\n` +
+    `   批准贷款申请\n` +
+    `   单位：R=人民币 / U=USDT\n` +
+    `   示例：<code>/ok 张三 300 R 50 7</code>\n\n` +
 
-    `/xq 用户 已还利息 续期天数 下期利息\n` +
-    `→ 续期，新应还=(上期-已还)+下期息\n` +
-    `→ 例：/xq 张三 50 7 30\n\n` +
+    `<code>/xq 用户 已还利息 续期天数 下期利息</code>\n` +
+    `   办理续期\n` +
+    `   新应还 = (上期应还 - 已还利息) + 下期利息\n` +
+    `   示例：<code>/xq 张三 50 7 30</code>\n\n` +
 
-    `/nb 用户\n` +
-    `→ 标记已还清\n` +
-    `→ 例：/nb 张三\n\n` +
+    `<code>/nb 用户</code>\n` +
+    `   标记已还清\n` +
+    `   示例：<code>/nb 张三</code>\n\n` +
 
-    `/zt 用户 天数\n` +
-    `→ 暂停催款N天（0=取消）\n` +
-    `→ 例：/zt 张三 2\n\n` +
+    `<code>/zt 用户 天数</code>\n` +
+    `   暂停催款（0=取消暂停）\n` +
+    `   示例：<code>/zt 张三 2</code>\n\n` +
 
-    `${"─".repeat(22)}\n` +
-    `� <b>查询</b>\n` +
-    `/cx 用户  → 查详情（申请+贷款）\n` +
-    `/cid 关键词  → 按名字/型号/地区搜用户ID\n` +
-    `/loanlist  → 全部用户总览\n` +
-    `/export  → 导出 CSV\n` +
-    `/cyq  → 统计数据\n` +
-    `/debug  → 调试配置和按钮\n\n` +
+    `\n\n` +
 
-    `${"─".repeat(22)}\n` +
-    `📢 <b>群发</b>\n` +
-    `/bb 内容  → 群发给所有用户\n\n` +
+    `<b>🔍 查询功能</b>\n` +
+    `<code>/cx 用户</code> - 查看用户详情\n` +
+    `<code>/cid 关键词</code> - 搜索用户ID\n` +
+    `<code>/loanlist</code> - 所有贷款总览\n` +
+    `<code>/export</code> - 导出CSV数据\n` +
+    `<code>/cyq</code> - 查看统计数据\n` +
+    `<code>/getconfig</code> - 查看当前配置\n` +
+    `<code>/getads</code> - 查看广告配置\n\n` +
 
-    `${"─".repeat(22)}\n` +
-    `⚙️ <b>配置</b>\n` +
-    `/setconfig {"字段":"值"}  → 改配置\n` +
-    `/getconfig  → 查当前配置\n` +
-    `/settext {"字段":"内容"}  → 改文案\n\n` +
+    `\n\n` +
 
-    `${"─".repeat(22)}\n` +
-    `💬 <b>双向对话</b>\n` +
-    `用户消息自动转发，回复该消息即可回复用户\n\n` +
+    `<b>📢 引导式广播</b>\n` +
+    `<code>/bb</code> - 引导式群发通知\n` +
+    `   支持范围：私信用户、频道和群组、全部\n` +
+    `   支持立即发送或定时发送\n` +
+    `   可排除指定频道/群组\n\n` +
 
-    `/ql000000  ⚠️ 清空所有数据\n` +
-    `/liuliu  查看此帮助`
+    `<code>/定时</code> - 定时任务管理\n` +
+    `   查看、新增或删除定时广播任务\n` +
+    `   支持当天多个时间段发送\n` +
+    `   每日0:00发送任务统计\n\n` +
+
+    `\n\n` +
+
+    `<b>💬 双向对话</b>\n` +
+    `用户消息自动转发给管理员\n` +
+    `回复转发的消息即可回复用户\n\n` +
+
+    `\n\n` +
+
+    `<code>/ql000000</code> ⚠️ 清空所有数据\n` +
+    `<code>/liuliu</code> 📖 查看此帮助`
   );
 }
 
 
 // ================================================================
-// 定时任务（每天自动催款）
+// 定时任务（催款 + 定时群发 + 0点统计）
 // ================================================================
 async function scheduledTask(env) {
   await loadConfig(env);
+  
+  const now = new Date(Date.now() + 7 * 3600000); // GMT+7
+  const currentTime = now.toISOString().substring(11, 16); // HH:MM
+  const today = getToday();
+  
+  // ========== 执行定时群发任务 ==========
+  const rawTasks = await env.BOT_KV.get("scheduled_tasks");
+  const tasks = rawTasks ? JSON.parse(rawTasks) : [];
+  
+  for (const task of tasks) {
+    if (task.status !== "pending" || task.date !== today) continue;
+    
+    // 检查是否到了发送时间（允许1分钟误差）
+    const shouldSend = task.times.some(time => {
+      const [targetHour, targetMin] = time.split(":").map(Number);
+      const [currentHour, currentMin] = currentTime.split(":").map(Number);
+      return targetHour === currentHour && Math.abs(targetMin - currentMin) <= 1;
+    });
+    
+    if (shouldSend) {
+      const channels = CONFIG.BROADCAST_CHANNELS || [];
+      const groups = CONFIG.BROADCAST_GROUPS || [];
+      const excluded = task.excluded || [];
+      
+      let selectedChannels = [];
+      let selectedGroups = [];
+      let includeUsers = false;
+      
+      if (task.scope === "users") {
+        includeUsers = true;
+      } else if (task.scope === "channels") {
+        selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+        selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+      } else if (task.scope === "all") {
+        selectedChannels = channels.filter((ch, i) => !excluded.includes(i + 1) && !excluded.includes(ch));
+        selectedGroups = groups.filter((gr, i) => !excluded.includes(channels.length + i + 1) && !excluded.includes(gr));
+        includeUsers = true;
+      }
+      
+      let channelSent = 0, groupSent = 0, userSent = 0;
+      const content = task.content;
+      
+      // 发送到频道
+      for (const channel of selectedChannels) {
+        try {
+          const res = content.type === "photo"
+            ? await sendPhoto(channel, content.photo_id, content.caption)
+            : await sendMsg(channel, content.text);
+          if (res && res.ok) channelSent++;
+        } catch (e) {
+          console.error(`Scheduled task to channel ${channel} failed:`, e);
+        }
+      }
+      
+      // 发送到群组
+      for (const group of selectedGroups) {
+        try {
+          const res = content.type === "photo"
+            ? await sendPhoto(group, content.photo_id, content.caption)
+            : await sendMsg(group, content.text);
+          if (res && res.ok) groupSent++;
+        } catch (e) {
+          console.error(`Scheduled task to group ${group} failed:`, e);
+        }
+      }
+      
+      // 发送给私信用户
+      if (includeUsers) {
+        const users = await getAllUsers(env);
+        for (const uid of users) {
+          try {
+            const res = content.type === "photo"
+              ? await sendPhoto(uid, content.photo_id, content.caption)
+              : await sendMsg(uid, content.text);
+            if (res && res.ok) userSent++;
+          } catch (e) {
+            console.error(`Scheduled task to user ${uid} failed:`, e);
+          }
+        }
+      }
+      
+      // 更新任务状态
+      task.status = "completed";
+      task.completed_at = getNow();
+      task.stats = {
+        channels: channelSent,
+        groups: groupSent,
+        users: userSent,
+      };
+      
+      await env.BOT_KV.put("scheduled_tasks", JSON.stringify(tasks));
+    }
+  }
+  
+  // ========== 0点发送定时任务统计 ==========
+  if (currentTime === "00:00" || currentTime === "00:01") {
+    const completedToday = tasks.filter(t => t.status === "completed" && t.date === today);
+    if (completedToday.length > 0) {
+      let statsMsg = `� 今日定时任务统计\n${"─".repeat(18)}\n\n`;
+      statsMsg += `✅ 完成任务：${completedToday.length}个\n\n`;
+      
+      for (const task of completedToday) {
+        const shortId = task.id.substring(5, 13);
+        statsMsg += `📋 #${shortId}\n`;
+        statsMsg += `⏰ ${task.times.join(", ")}\n`;
+        if (task.stats) {
+          statsMsg += `📊 `;
+          if (task.stats.channels > 0) statsMsg += `频道${task.stats.channels} `;
+          if (task.stats.groups > 0) statsMsg += `群组${task.stats.groups} `;
+          if (task.stats.users > 0) statsMsg += `私信${task.stats.users}`;
+          statsMsg += `\n`;
+        }
+        statsMsg += `\n`;
+      }
+      
+      for (const admin of CONFIG.ADMIN_IDS) {
+        await sendMsg(admin, statsMsg);
+      }
+    }
+  }
+  
+  // ========== 催款功能 ==========
   const raw   = await env.BOT_KV.get("loan_users");
   const users = raw ? JSON.parse(raw) : [];
-  const today = getToday();
 
   for (const uid of users) {
     try {
@@ -1408,3 +1993,5 @@ export default {
     ctx.waitUntil(scheduledTask(env));
   },
 };
+
+
