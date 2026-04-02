@@ -294,15 +294,15 @@ async function sendMainMenu(chatId) {
     inline_keyboard: [
       [
         { text: "📋 贷款说明",        callback_data: "menu_loaninfo"   },
-        { text: "� 下款频道",        url: CONFIG.CHANNEL_LINK         },
-        { text: "� 推广有礼",        callback_data: "menu_promote"    },
+        { text: "📢 下款频道",        url: CONFIG.CHANNEL_LINK         },
+        { text: "🚩 推广有礼",        callback_data: "menu_promote"    },
       ],
       [
-        { text: "� 申请额度",        callback_data: "menu_apply"      },
-        { text: "🎉 还款",            callback_data: "menu_repay"      },
+        { text: "📊 申请额度",        callback_data: "menu_apply"      },
+        { text: "💰 还款",            callback_data: "menu_repay"      },
       ],
       [
-        { text: "� 在线客服",        url: CONFIG.CUSTOMER_SERVICE     },
+        { text: "👤 在线客服",        url: CONFIG.CUSTOMER_SERVICE     },
         { text: "🔥 TRX能量/TG会员", callback_data: "menu_energy"     },
       ],
     ],
