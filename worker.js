@@ -304,12 +304,12 @@ async function sendMainMenu(chatId) {
     inline_keyboard: [
       [
         { text: "📋 贷款说明",        callback_data: "menu_loaninfo"   },
-        { text: "📢 下款频道",        url: CONFIG.CHANNEL_LINK         },
+        { text: "💰 还款",            callback_data: "menu_repay"      },
         { text: "🚩 推广有礼",        callback_data: "menu_promote"    },
       ],
       [
         { text: "📊 申请额度",        callback_data: "menu_apply"      },
-        { text: "💰 还款",            callback_data: "menu_repay"      },
+        { text: "📢 下款频道",        url: CONFIG.CHANNEL_LINK         },
       ],
       [
         { text: "👤 在线客服",        url: CONFIG.CUSTOMER_SERVICE     },
@@ -461,8 +461,52 @@ async function handleCallback(cb, env) {
   }
 
   // ── 引导式群发回调 ──────────────────────────────────────────────
+  if (data === "broadcast_type_temp") {
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "broadcast_temp_mode", type: "temp" }, env);
+    return sendMsg(chatId,
+      `📅 当天任务（临时通知）\n\n请选择发送方式：`,
+      {
+        inline_keyboard: [
+          [{ text: "⚡ 立即发送", callback_data: "temp_send_now" }],
+          [{ text: "⏰ 定时发送", callback_data: "temp_send_later" }],
+          [{ text: "❌ 取消", callback_data: "broadcast_cancel" }],
+        ],
+      }
+    );
+  }
+
+  if (data === "broadcast_type_daily") {
+    return cmdScheduledTasks(chatId, env);
+  }
+
+  if (data === "temp_send_now") {
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "broadcast_range", type: "temp", sendNow: true }, env);
+    return showBroadcastRangeMenu(chatId, env);
+  }
+
+  if (data === "temp_send_later") {
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "broadcast_range", type: "temp", sendNow: false }, env);
+    return showBroadcastRangeMenu(chatId, env);
+  }
+
+  if (data === "daily_add") {
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "daily_times", type: "daily" }, env);
+    return sendMsg(chatId,
+      `🔄 新增每天任务\n\n` +
+      `请输入每天要发送的时间：\n（多个时间用空格或逗号分隔）\n\n` +
+      `格式：HH:MM\n` +
+      `示例：09:00 14:00 20:00`,
+      { inline_keyboard: [[{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] }
+    );
+  }
+
   if (data === "broadcast_users") {
-    await setState(chatId, { step: "broadcast_content", scope: "users", excluded: [] }, env);
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "broadcast_content", scope: "users", excluded: [] }, env);
     const userCount = (await getAllUsers(env)).length;
     return sendMsg(chatId,
       `✅ 已选择：📱 私信用户 (${userCount}人)\n\n` +
@@ -472,12 +516,14 @@ async function handleCallback(cb, env) {
   }
 
   if (data === "broadcast_channels") {
-    await setState(chatId, { step: "broadcast_exclude", scope: "channels" }, env);
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "broadcast_exclude", scope: "channels" }, env);
     return showChannelGroupList(chatId, "channels", env);
   }
 
   if (data === "broadcast_all") {
-    await setState(chatId, { step: "broadcast_exclude", scope: "all" }, env);
+    const state = await getState(chatId, env);
+    await setState(chatId, { ...state, step: "broadcast_exclude", scope: "all" }, env);
     return showChannelGroupList(chatId, "all", env);
   }
 
@@ -496,7 +542,7 @@ async function handleCallback(cb, env) {
     const currentTime = now.toISOString().substring(11, 16);
     return sendMsg(chatId,
       `⏰ 定时发送\n\n` +
-      `请输入今天要发送的时间：\n（多个时间用空格分隔）\n\n` +
+      `请输入今天要发送的时间：\n（多个时间用空格或逗号分隔）\n\n` +
       `格式：HH:MM\n` +
       `示例：18:00 20:00 22:00\n\n` +
       `⏰ 当前时间：${currentTime} (GMT+7)`,
@@ -504,16 +550,23 @@ async function handleCallback(cb, env) {
     );
   }
 
-  if (data === "broadcast_schedule_confirm") {
+  if (data === "temp_confirm") {
     const state = await getState(chatId, env);
     if (!state || !state.times) return sendMsg(chatId, "❌ 会话已过期，请重新开始");
     await clearState(chatId, env);
-    return createScheduledTask(chatId, state, env);
+    return createTempTask(chatId, state, env);
+  }
+
+  if (data === "daily_confirm") {
+    const state = await getState(chatId, env);
+    if (!state || !state.times) return sendMsg(chatId, "❌ 会话已过期，请重新开始");
+    await clearState(chatId, env);
+    return createDailyTask(chatId, state, env);
   }
 
   if (data === "broadcast_cancel") {
     await clearState(chatId, env);
-    return sendMsg(chatId, "❌ 已取消群发操作");
+    return sendMsg(chatId, "❌ 已取消操作");
   }
 
   if (data.startsWith("scheduled_delete_")) {
@@ -574,7 +627,6 @@ async function handleMessage(msg, env) {
     if (text === "/loanlist")                         return cmdLoanList(chatId, env);
     if (text === "/export")                           return cmdExport(chatId, env);
     if (text === "/bb")                               return cmdBroadcastGuided(chatId, env);
-    if (text === "/定时")                             return cmdScheduledTasks(chatId, env);
     if (text === "/getconfig")                        return cmdGetConfig(chatId, env);
     if (text === "/getads")                           return cmdGetAds(chatId, env);
     if (text === "/liuliu")                           return cmdLiuliu(chatId);
@@ -603,6 +655,15 @@ async function handleMessage(msg, env) {
   const step = state.step;
 
   // ── 引导式群发流程 ──────────────────────────────────────────────
+  if (step === "daily_times") {
+    const times = parseTimeInput(text.trim());
+    if (times.length === 0) {
+      return sendMsg(chatId, "❌ 时间格式错误\n\n请输入正确格式：HH:MM\n示例：09:00 14:00 20:00");
+    }
+    await setState(chatId, { ...state, step: "broadcast_range", times }, env);
+    return showBroadcastRangeMenu(chatId, env);
+  }
+
   if (step === "broadcast_exclude") {
     const input = text.trim();
     if (!input || input === "0") {
@@ -639,6 +700,13 @@ async function handleMessage(msg, env) {
     }
     await setState(chatId, { ...state, step: "broadcast_schedule_confirm", times }, env);
     return showScheduleConfirm(chatId, { ...state, times }, env);
+  }
+
+  // 处理删除每天任务的输入（例如：1 3）
+  if (step === "daily_list" && /^\d+(\s+\d+)*$/.test(text.trim())) {
+    const numbers = text.trim().split(/\s+/).map(n => parseInt(n));
+    await clearState(chatId, env);
+    return deleteDailyTasks(chatId, numbers, env);
   }
 
   // ── 申请流程 ──────────────────────────────────────────────────
@@ -1320,8 +1388,16 @@ async function cmdClearAll(chatId, env) {
 // ================================================================
 
 async function cmdBroadcastGuided(chatId, env) {
-  await setState(chatId, { step: "broadcast_range", type: "temp" }, env);
-  return showBroadcastRangeMenu(chatId, env);
+  await setState(chatId, { step: "broadcast_type" }, env);
+  return sendMsg(chatId,
+    `📢 广播通知\n\n请选择任务类型：`,
+    {
+      inline_keyboard: [
+        [{ text: "📅 当天任务（临时通知）", callback_data: "broadcast_type_temp" }],
+        [{ text: "🔄 每天任务（循环广播）", callback_data: "broadcast_type_daily" }],
+      ],
+    }
+  );
 }
 
 async function showBroadcastRangeMenu(chatId, env) {
@@ -1480,9 +1556,32 @@ async function showBroadcastConfirm(chatId, state, env) {
   }
   preview += `\n请选择发送方式：`;
   
-  const keyboard = state.type === "scheduled"
-    ? { inline_keyboard: [[{ text: "⏰ 设置发送时间", callback_data: "broadcast_schedule" }], [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] }
-    : { inline_keyboard: [[{ text: "📤 立即发送", callback_data: "broadcast_send_now" }, { text: "⏰ 定时发送", callback_data: "broadcast_schedule" }], [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]] };
+  let keyboard;
+  if (state.type === "daily") {
+    // 每天任务：直接确认创建
+    keyboard = { 
+      inline_keyboard: [
+        [{ text: "✅ 确认创建", callback_data: "daily_confirm" }],
+        [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]
+      ] 
+    };
+  } else if (state.sendNow) {
+    // 当天任务 - 立即发送
+    keyboard = { 
+      inline_keyboard: [
+        [{ text: "📤 立即发送", callback_data: "broadcast_send_now" }],
+        [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]
+      ] 
+    };
+  } else {
+    // 当天任务 - 定时发送
+    keyboard = { 
+      inline_keyboard: [
+        [{ text: "⏰ 设置发送时间", callback_data: "broadcast_schedule" }],
+        [{ text: "❌ 取消", callback_data: "broadcast_cancel" }]
+      ] 
+    };
+  }
   
   return sendMsg(chatId, preview, keyboard);
 }
@@ -1602,7 +1701,8 @@ async function showScheduleConfirm(chatId, state, env) {
     includeUsers = true;
   }
   
-  let msg = `⏰ 定时任务确认\n\n`;
+  const isDaily = state.type === "daily";
+  let msg = `⏰ ${isDaily ? "每天任务" : "定时任务"}确认\n\n`;
   msg += `📊 发送范围：\n`;
   if (selectedChannels.length > 0) msg += `📢 频道：${selectedChannels.length}个\n`;
   if (selectedGroups.length > 0) msg += `👥 群组：${selectedGroups.length}个\n`;
@@ -1612,22 +1712,22 @@ async function showScheduleConfirm(chatId, state, env) {
   }
   msg += `\n⏰ 发送时间：\n`;
   for (const time of state.times) {
-    msg += `• 今天 ${time}\n`;
+    msg += `• ${isDaily ? "每天" : "今天"} ${time}\n`;
   }
   
   return sendMsg(chatId, msg, {
     inline_keyboard: [
-      [{ text: "✅ 确认创建", callback_data: "broadcast_schedule_confirm" }],
+      [{ text: "✅ 确认创建", callback_data: isDaily ? "daily_confirm" : "temp_confirm" }],
       [{ text: "❌ 取消", callback_data: "broadcast_cancel" }],
     ],
   });
 }
 
-async function createScheduledTask(chatId, state, env) {
-  const raw = await env.BOT_KV.get("scheduled_tasks");
+async function createTempTask(chatId, state, env) {
+  const raw = await env.BOT_KV.get("temp_tasks");
   const tasks = raw ? JSON.parse(raw) : [];
   
-  const taskId = `task_${Date.now()}`;
+  const taskId = `temp_${Date.now()}`;
   const task = {
     id: taskId,
     created_at: getNow(),
@@ -1640,37 +1740,60 @@ async function createScheduledTask(chatId, state, env) {
   };
   
   tasks.push(task);
-  await env.BOT_KV.put("scheduled_tasks", JSON.stringify(tasks));
+  await env.BOT_KV.put("temp_tasks", JSON.stringify(tasks));
   
   return sendMsg(chatId,
-    `✅ 定时任务已创建！\n\n` +
-    `任务ID：${taskId.substring(5, 13)}\n` +
-    `⏰ 今天 ${state.times.join(", ")}\n\n` +
-    `💡 管理任务：/定时`
+    `✅ 临时任务已创建！\n\n` +
+    `⏰ 今天 ${state.times.join(", ")} 自动发送\n\n` +
+    `💡 任务将在发送后自动完成`
+  );
+}
+
+async function createDailyTask(chatId, state, env) {
+  const raw = await env.BOT_KV.get("daily_tasks");
+  const tasks = raw ? JSON.parse(raw) : [];
+  
+  const task = {
+    id: `daily_${Date.now()}`,
+    created_at: getNow(),
+    scope: state.scope,
+    excluded: state.excluded || [],
+    content: state.content,
+    times: state.times,
+  };
+  
+  tasks.push(task);
+  await env.BOT_KV.put("daily_tasks", JSON.stringify(tasks));
+  
+  return sendMsg(chatId,
+    `✅ 每天任务已创建！\n\n` +
+    `⏰ 每天 ${state.times.join(", ")} 自动发送\n\n` +
+    `💡 管理任务：/bb 选择"每天任务"`
   );
 }
 
 async function cmdScheduledTasks(chatId, env) {
-  const raw = await env.BOT_KV.get("scheduled_tasks");
+  const raw = await env.BOT_KV.get("daily_tasks");
   const tasks = raw ? JSON.parse(raw) : [];
+  
+  await setState(chatId, { step: "daily_list" }, env);
   
   if (tasks.length === 0) {
     return sendMsg(chatId,
-      `⏰ 定时任务列表\n\n暂无定时任务`,
-      { inline_keyboard: [[{ text: "➕ 新增任务", callback_data: "scheduled_add" }]] }
+      `🔄 每天任务列表\n\n暂无每天任务\n\n💡 回复任务编号可删除，例如：1 3`,
+      { inline_keyboard: [[{ text: "➕ 新增任务", callback_data: "daily_add" }]] }
     );
   }
   
-  let msg = `⏰ 定时任务列表\n\n`;
-  const keyboard = [];
+  let msg = `🔄 每天任务列表\n\n`;
   
-  for (const task of tasks) {
-    const statusLabel = task.status === "pending" ? "[待发送]" : task.status === "completed" ? "[已完成]" : "[已取消]";
-    const shortId = task.id.substring(5, 13);
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+    const num = i + 1;
     
     msg += `━━━━━━━━━━━━━━\n`;
-    msg += `📋 任务 #${shortId} ${statusLabel}\n`;
-    msg += `⏰ ${task.times.join(", ")}\n`;
+    msg += `📋 任务 ${num}\n`;
+    msg += `⏰ 每天 ${task.times.join(", ")}\n`;
     
     const scopeLabel = task.scope === "users" ? "私信" : task.scope === "channels" ? "频道和群组" : "全部";
     msg += `📊 ${scopeLabel}\n`;
@@ -1679,37 +1802,28 @@ async function cmdScheduledTasks(chatId, env) {
       ? (task.content.caption || "[图片]")
       : task.content.text;
     msg += `📝 ${preview.substring(0, 30)}${preview.length > 30 ? "..." : ""}\n`;
-    
-    if (task.status === "completed" && task.stats) {
-      msg += `✅ 统计：`;
-      if (task.stats.channels) msg += `频道${task.stats.channels} `;
-      if (task.stats.groups) msg += `群组${task.stats.groups} `;
-      if (task.stats.users) msg += `私信${task.stats.users}`;
-      msg += `\n`;
-    }
-    
-    keyboard.push([{ text: `🗑️ 删除 #${shortId}`, callback_data: `scheduled_delete_${task.id}` }]);
   }
   
-  msg += `\n━━━━━━━━━━━━━━`;
+  msg += `\n━━━━━━━━━━━━━━\n`;
+  msg += `💡 回复任务编号可删除，例如：1 3`;
   
-  keyboard.push([{ text: "➕ 新增任务", callback_data: "scheduled_add" }]);
-  keyboard.push([{ text: "🔄 刷新列表", callback_data: "scheduled_refresh" }]);
+  const keyboard = [[{ text: "➕ 新增任务", callback_data: "daily_add" }]];
   
   return sendMsg(chatId, msg, { inline_keyboard: keyboard });
 }
 
-async function deleteScheduledTask(chatId, taskId, env) {
-  const raw = await env.BOT_KV.get("scheduled_tasks");
+async function deleteDailyTasks(chatId, taskNumbers, env) {
+  const raw = await env.BOT_KV.get("daily_tasks");
   const tasks = raw ? JSON.parse(raw) : [];
   
-  const filtered = tasks.filter(t => t.id !== taskId);
-  await env.BOT_KV.put("scheduled_tasks", JSON.stringify(filtered));
+  const toDelete = taskNumbers.map(n => n - 1).filter(i => i >= 0 && i < tasks.length);
+  const filtered = tasks.filter((_, i) => !toDelete.includes(i));
   
-  await sendMsg(chatId, `✅ 任务已删除`);
+  await env.BOT_KV.put("daily_tasks", JSON.stringify(filtered));
+  
+  await sendMsg(chatId, `✅ 已删除 ${toDelete.length} 个任务`);
   return cmdScheduledTasks(chatId, env);
 }
-
 
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
@@ -1749,14 +1863,10 @@ async function cmdLiuliu(chatId) {
 
     `<b>📢 引导式广播</b>\n` +
     `<code>/bb</code> - 引导式群发通知\n` +
+    `   • 当天任务：临时通知（立即或定时）\n` +
+    `   • 每天任务：循环广播（每天自动发送）\n` +
     `   支持范围：私信用户、频道和群组、全部\n` +
-    `   支持立即发送或定时发送\n` +
     `   可排除指定频道/群组\n\n` +
-
-    `<code>/定时</code> - 定时任务管理\n` +
-    `   查看、新增或删除定时广播任务\n` +
-    `   支持当天多个时间段发送\n` +
-    `   每日0:00发送任务统计\n\n` +
 
     `\n\n` +
 
