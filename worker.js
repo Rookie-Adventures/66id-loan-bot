@@ -49,7 +49,7 @@ const DEFAULT_TEXT = {
 
   agree_prompt: `📋 请确认您已阅读并同意以上贷款须知。\n\n\n点击下方按钮开始申请 👇`,
 
-  duplicate_apply: `⚠️ 您已提交过申请，请耐心等待专员联系。\n如有疑问请联系在线客服：https://t.me/liuliuidid_bot`,
+  duplicate_apply: `⚠️ 您已提交过申请，请耐心等待专员联系。\n如有疑问请联系<a href="https://t.me/liuliuidid_bot">在线客服</a>`,
 
   repay_info: `💰 还款说明\n\n\n贷款周期7天（含当天），到期无力偿还可选择续期。\n\n\n请选择您的操作：`,
 
@@ -380,7 +380,7 @@ async function handleCallback(cb, env) {
     if (existing && !existing.approved) return sendMsg(chatId, TEXT.duplicate_apply);
     const existingLoan = await getLoan(chatId, env);
     if (existingLoan && existingLoan.status === "active") {
-      return sendMsg(chatId, `⚠️ 您当前有未还清的贷款，请还清后再申请。\n如有疑问请联系：${CONFIG.CUSTOMER_SERVICE}`);
+      return sendMsg(chatId, `⚠️ 您当前有未还清的贷款，请还清后再申请。\n如有疑问请联系<a href="${CONFIG.CUSTOMER_SERVICE}">在线客服</a>`);
     }
     await sendMsg(chatId, TEXT.loan_info);
     return sendMsg(chatId, TEXT.agree_prompt, {
@@ -403,7 +403,7 @@ async function handleCallback(cb, env) {
   if (data === "apply_stage2_installment") {
     await clearState(chatId, env);
     return sendMsg(chatId,
-      `❌ 很抱歉，分期未结清的设备暂不符合申请条件。\n\n如有疑问，请联系在线客服：\n${CONFIG.CUSTOMER_SERVICE}`
+      `❌ 很抱歉，分期未结清的设备暂不符合申请条件。\n\n如有疑问，请联系<a href="${CONFIG.CUSTOMER_SERVICE}">在线客服</a>`
     );
   }
 
@@ -439,7 +439,7 @@ async function handleCallback(cb, env) {
   }
 
   if (data === "repay_renew") {
-    return sendMsg(chatId, `🔄 续期申请\n\n请直接联系客服办理续期：\n${CONFIG.CUSTOMER_SERVICE}`);
+    return sendMsg(chatId, `🔄 续期申请\n\n请直接联系<a href="${CONFIG.CUSTOMER_SERVICE}">客服</a>办理续期`);
   }
 
   if (data === "menu_promote") return sendMsg(chatId, TEXT.promote);
@@ -565,7 +565,7 @@ async function handleMessage(msg, env) {
     s.applied = (s.applied || 0) + 1;
     await saveStats(s, env);
     await forwardApply(chatId, final, userId);
-    return sendMsg(chatId, `🎉 申请提交成功！\n\n资料已提交，专员将尽快与您联系。\n如有疑问请联系：${CONFIG.CUSTOMER_SERVICE}`);
+    return sendMsg(chatId, `🎉 申请提交成功！\n\n资料已提交，专员将尽快与您联系。\n如有疑问请联系<a href="${CONFIG.CUSTOMER_SERVICE}">在线客服</a>`);
   }
 
   if (step === "repay_screenshot") {
@@ -588,7 +588,7 @@ async function handleMessage(msg, env) {
     await clearState(chatId, env);
     await forwardRepay(chatId, final);
     return sendMsg(chatId,
-      `✅ 还款信息已提交！\n\n💰 金额：${final.amount}\n🍎 Apple ID：${text.trim()}\n\n客服将在30分钟内确认\n${CONFIG.CUSTOMER_SERVICE}`
+      `✅ 还款信息已提交！\n\n💰 金额：${final.amount}\n🍎 Apple ID：${text.trim()}\n\n客服将在30分钟内确认\n<a href="${CONFIG.CUSTOMER_SERVICE}">联系客服</a>`
     );
   }
 
@@ -725,7 +725,7 @@ async function cmdApprove(chatId, text, env) {
     `📅 还款截止：<b>${endDate}</b>\n` +
     `💳 到期应还：<b>${unitLabel}${repayAmt}${unitSuffix}</b>\n\n` +
     `还款地址：\n<code>${CONFIG.PAYMENT_ADDRESS}</code>\n\n` +
-    `如有疑问请联系：${CONFIG.CUSTOMER_SERVICE}`
+    `如有疑问请联系<a href="${CONFIG.CUSTOMER_SERVICE}">在线客服</a>`
   );
 
   return sendMsg(chatId,
@@ -800,7 +800,7 @@ async function cmdRenew(chatId, text, env) {
     `📅 新截止日期：<b>${newEndDate}</b>（${days} 天）\n` +
     `💳 新周期应还：<b>${unitLabel}${newRepay}${unitSuffix}</b>\n\n` +
     `还款地址：\n<code>${CONFIG.PAYMENT_ADDRESS}</code>\n\n` +
-    `如有疑问请联系：${CONFIG.CUSTOMER_SERVICE}`
+    `如有疑问请联系<a href="${CONFIG.CUSTOMER_SERVICE}">在线客服</a>`
   );
 
   return sendMsg(chatId,
@@ -1227,6 +1227,8 @@ async function cmdClearAll(chatId, env) {
 }
 
 
+
+
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
     `👮 管理员指令\n${"─".repeat(22)}\n\n` +
@@ -1249,7 +1251,7 @@ async function cmdLiuliu(chatId) {
     `→ 例：/zt 张三 2\n\n` +
 
     `${"─".repeat(22)}\n` +
-    `🔍 <b>查询</b>\n` +
+    `� <b>查询</b>\n` +
     `/cx 用户  → 查详情（申请+贷款）\n` +
     `/cid 关键词  → 按名字/型号/地区搜用户ID\n` +
     `/loanlist  → 全部用户总览\n` +
@@ -1302,7 +1304,7 @@ async function scheduledTask(env) {
           `您的贷款将于<b>明天 ${loan.end_date}</b> 到期！\n\n` +
           `💳 应还金额：<b>${unitLabel}${loan.repay_amount}${unitSuffix}</b>\n\n` +
           `还款地址：\n<code>${CONFIG.PAYMENT_ADDRESS}</code>\n\n` +
-          `如需续期请提前联系：${CONFIG.CUSTOMER_SERVICE}`
+          `如需续期请提前联系<a href="${CONFIG.CUSTOMER_SERVICE}">客服</a>`
         );
         await saveLoan(uid, { ...loan, reminded: true }, env);
       }
@@ -1313,7 +1315,7 @@ async function scheduledTask(env) {
           `您的贷款<b>今天 ${loan.end_date}</b> 到期！\n\n` +
           `💳 应还金额：<b>${unitLabel}${loan.repay_amount}${unitSuffix}</b>\n\n` +
           `还款地址：\n<code>${CONFIG.PAYMENT_ADDRESS}</code>\n\n` +
-          `如需续期请立即联系：${CONFIG.CUSTOMER_SERVICE}`
+          `如需续期请立即联系<a href="${CONFIG.CUSTOMER_SERVICE}">客服</a>`
         );
       }
 
@@ -1328,7 +1330,7 @@ async function scheduledTask(env) {
           `${dayHint}\n\n` +
           `💳 应还金额：<b>${unitLabel}${loan.repay_amount}${unitSuffix}</b>\n\n` +
           `⚠️ 逾期将被锁机并抹除数据！\n` +
-          `立即还款或续期：${CONFIG.CUSTOMER_SERVICE}`
+          `立即还款或续期：<a href="${CONFIG.CUSTOMER_SERVICE}">联系客服</a>`
         );
 
         if (sendResult && !sendResult.ok && sendResult.error_code === 403) {
