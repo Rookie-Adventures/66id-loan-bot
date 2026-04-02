@@ -6,9 +6,9 @@ const DEFAULT = {
   BOT_TOKEN:        "8604621639:AAEMH_W5NDU1Z2pVIvtl3fiXIIjqrO2-3U0",
   FORWARD_TARGETS:  ["8333517664", "7866700520"],
   ADMIN_IDS:        ["8333517664", "7866700520"],
-  CUSTOMER_SERVICE: "https://t.me/liuliuidid_bot",
+  CUSTOMER_SERVICE: "https://t.me/liuliuidi",
   CHANNEL_LINK:     "https://t.me/liuLiuid",
-  ENERGY_BOT:       "https://t.me/trx20gasbot",
+  ENERGY_BOT:       "https://t.me/trx20gasbot?start",
   PAYMENT_ADDRESS:  "TG6kiaNUUgA56wy2mXbBo4E9TgpUbXoKWw",
   QR_FILE_ID:       "",
   QR_FILE_ID_2:     "",
@@ -490,6 +490,7 @@ async function handleMessage(msg, env) {
   if (isAdmin(userId)) {
     if (text === "/cid" || text.startsWith("/cid ")) return cmdCid(chatId, text, env);
     if (text === "/cyq")                              return cmdStats(chatId, env);
+    if (text === "/debug")                            return cmdDebug(chatId, env);
     if (text.startsWith("/ok"))                       return cmdApprove(chatId, text, env);
     if (text.startsWith("/xq"))                       return cmdRenew(chatId, text, env);
     if (text.startsWith("/nb"))                       return cmdRepaid(chatId, text, env);
@@ -513,7 +514,7 @@ async function handleMessage(msg, env) {
       }
     }
 
-    return sendMsg(chatId, `❌ 未识别的指令，发送 /liuliu 查看帮助`);
+    // 如果不是管理员命令，继续执行用户逻辑（管理员也可以正常使用申请流程）
   }
 
   // ── 用户逻辑 ─────────────────────────────────────────────────────
@@ -1229,6 +1230,34 @@ async function cmdClearAll(chatId, env) {
 
 
 
+async function cmdDebug(chatId, env) {
+  const msg = 
+    `🔧 配置调试信息\n${"─".repeat(22)}\n\n` +
+    `客服链接：${CONFIG.CUSTOMER_SERVICE}\n` +
+    `频道链接：${CONFIG.CHANNEL_LINK}\n` +
+    `能量机器人：${CONFIG.ENERGY_BOT}\n` +
+    `收款地址：${CONFIG.PAYMENT_ADDRESS}\n\n` +
+    `测试按钮（点击看是否能跳转）：`;
+  
+  await sendMsg(chatId, msg, {
+    inline_keyboard: [
+      [{ text: "👤 测试客服", url: CONFIG.CUSTOMER_SERVICE }],
+      [{ text: "📢 测试频道", url: CONFIG.CHANNEL_LINK }],
+      [{ text: "⚡️ 测试能量", url: CONFIG.ENERGY_BOT }],
+    ],
+  });
+  
+  return sendMsg(chatId, 
+    `如果上面的按钮点击没反应，可能原因：\n\n` +
+    `1. Bot 用户名不存在或拼写错误\n` +
+    `2. 频道/群组链接无效\n` +
+    `3. 需要先启动对应的 bot\n\n` +
+    `当前配置的客服 bot：liuliuidid_bot\n` +
+    `请确认这个 bot 是否存在且可访问`
+  );
+}
+
+
 async function cmdLiuliu(chatId) {
   return sendMsg(chatId,
     `👮 管理员指令\n${"─".repeat(22)}\n\n` +
@@ -1256,7 +1285,8 @@ async function cmdLiuliu(chatId) {
     `/cid 关键词  → 按名字/型号/地区搜用户ID\n` +
     `/loanlist  → 全部用户总览\n` +
     `/export  → 导出 CSV\n` +
-    `/cyq  → 统计数据\n\n` +
+    `/cyq  → 统计数据\n` +
+    `/debug  → 调试配置和按钮\n\n` +
 
     `${"─".repeat(22)}\n` +
     `📢 <b>群发</b>\n` +
