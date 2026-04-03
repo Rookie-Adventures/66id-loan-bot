@@ -4,8 +4,8 @@
 
 const DEFAULT = {
   BOT_TOKEN:        "8604621639:AAEMH_W5NDU1Z2pVIvtl3fiXIIjqrO2-3U0",
-  FORWARD_TARGETS:  ["8333517664", "7866700520"],
-  ADMIN_IDS:        ["8333517664", "7866700520"],
+  FORWARD_TARGETS:  ["8333517664",],
+  ADMIN_IDS:        ["8333517664",],
   CUSTOMER_SERVICE: "https://t.me/liuliuidi",
   CHANNEL_LINK:     "https://t.me/liuLiuid",
   ENERGY_BOT:       "https://t.me/trx20gasbot?start",
