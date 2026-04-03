@@ -308,7 +308,7 @@ async function sendMainMenu(chatId) {
         { text: "🚩 推广有礼",        callback_data: "menu_promote"    },
       ],
       [
-        { text: "📊 申请额度",        callback_data: "menu_apply"      },
+        { text: "📊 贷款申请",        callback_data: "menu_apply"      },
         { text: "📢 下款频道",        url: CONFIG.CHANNEL_LINK         },
       ],
       [
